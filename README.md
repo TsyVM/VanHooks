@@ -1,7 +1,6 @@
 # VanHooks
 
 <p align="center">
-  <img src="assets/vanhooks-logo.png" alt="VanHooks Logo" width="256">
 </p>
 
 <h3 align="center">
