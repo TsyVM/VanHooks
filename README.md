@@ -3,10 +3,6 @@
 <p align="center">
 </p>
 
-<h3 align="center">
-If a function can execute, VanHooks should be able to reach it.
-</h3>
-
 <p align="center">
 A modern cross-platform hooking and instrumentation framework for reverse engineering, runtime analysis, systems research, and game engine development.
 </p>
