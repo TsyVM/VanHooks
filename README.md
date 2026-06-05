@@ -358,12 +358,6 @@ Precompiled `.lib` files are provided for Windows x86 and x64. ARM64 and POSIX t
 - **[VanHooks_Functions_Guide.md](VanHooks_Functions_Guide.md)** — Complete API reference: every function, every configuration field, every error code.
 - **[lib/README.md](lib/README.md)** — Precompiled library matrix, MSVC project setup, and build-from-source instructions for ARM64 and POSIX.
 
----
-
-## DEF CON 34
-
-VanHooks is being presented at **DEF CON 34, August 2026, LVCC West Hall.**
-
 *"VanHooks: How We Rewrote the Hook — Cross-Platform C++23 Function Interception from x64 to ARM64"*
 
 ---
