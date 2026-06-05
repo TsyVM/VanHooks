@@ -8,10 +8,8 @@ Zydis is compiled in — no separate dependency needed.
 
 | Folder | Architecture | Config | CRT | Size |
 |---|---|---|---|---|
-| `win-x64/Release/vanhooks.lib` | x64 | Release | `/MT` | 2.2 MB |
-| `win-x64/Debug/vanhooks.lib`   | x64 | Debug   | `/MTd` | 5.3 MB |
-| `win-x86/Release/vanhooks.lib` | x86 (32-bit) | Release | `/MT` | 1.4 MB |
-| `win-x86/Debug/vanhooks.lib`   | x86 (32-bit) | Debug   | `/MTd` | 3.4 MB |
+| `win-x64/Release/vanhooks.lib` | x64 | Release | `/MT` | 
+| `win-x86/Release/vanhooks.lib` | x86 (32-bit) | Release | `/MT` | 
 
 > **ARM64:** Build from source — see below.  The ARM64 cross-compile tools
 > were not available on the release build machine.
