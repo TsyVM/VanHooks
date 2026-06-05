@@ -78,12 +78,6 @@ VanHooks is built around a different idea:
 | macOS Intel | Supported |
 | macOS Apple Silicon | Supported |
 
-### Architecture Support
-
-- x86
-- x64
-- ARM64
-
 ---
 
 ## Simple By Default
