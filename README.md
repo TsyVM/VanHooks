@@ -57,9 +57,7 @@ Copy `include/` into your project and link against the precompiled `.lib` for yo
 | Target | Configuration | Path |
 |---|---|---|
 | Windows x64 | Release | `lib/win-x64/Release/vanhooks.lib` |
-| Windows x64 | Debug | `lib/win-x64/Debug/vanhooks.lib` |
 | Windows x86 | Release | `lib/win-x86/Release/vanhooks.lib` |
-| Windows x86 | Debug | `lib/win-x86/Debug/vanhooks.lib` |
 
 All precompiled libs use a static CRT (`/MT` Release, `/MTd` Debug). No Visual C++ Redistributable is required. See [`lib/README.md`](lib/README.md) for MSVC project settings and ARM64 / Linux / macOS build-from-source instructions.
 
