@@ -1,6 +1,6 @@
 # VanHooks — Functions Guide
 
-**Public API Reference · v0.1.0**  
+**Public API Reference · v1.0.0**  
 C++23 · Windows / Linux / macOS · x86 / x64 / ARM64
 
 ---
@@ -872,4 +872,4 @@ if (!r) printf("%s\n", vh::error_to_string(r.error()).data());
 
 ---
 
-*VanHooks Functions Guide · v0.1.0*
+*VanHooks Functions Guide · v1.0.0*
