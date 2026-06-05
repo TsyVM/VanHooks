@@ -6,7 +6,7 @@ Zydis is compiled in — no separate dependency needed.
 
 ## Library Matrix
 
-| Folder | Architecture | Config | CRT |
+| Folder | Architecture | Config | CRT | NA |
 |---|---|---|---|---|
 | `win-x64/Release/vanhooks.lib` | x64 | Release | `/MT` | 
 | `win-x86/Release/vanhooks.lib` | x86 (32-bit) | Release | `/MT` | 
