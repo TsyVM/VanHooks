@@ -1,182 +1,371 @@
 # VanHooks
 
-<p align="center">
-</p>
+**Modern C++23 Cross-Platform Function Hooking Library**
 
-<p align="center">
-A modern cross-platform hooking and instrumentation framework for reverse engineering, runtime analysis, systems research, and game engine development.
-</p>
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![C++23](https://img.shields.io/badge/C%2B%2B-23-blue.svg)](https://en.cppreference.com/w/cpp/23)
+[![Windows](https://img.shields.io/badge/Windows-x86%20%7C%20x64-0078D4?logo=windows)](lib/)
+[![Linux](https://img.shields.io/badge/Linux-x64%20%7C%20ARM64-FCC624?logo=linux&logoColor=black)](lib/)
+[![macOS](https://img.shields.io/badge/macOS-x64%20%7C%20ARM64-000000?logo=apple)](lib/)
 
----
-
-## What is VanHooks?
-
-VanHooks is a next-generation framework for intercepting, observing, and modifying native software at runtime.
-
-Built from the perspective of reverse engineers, engine researchers, and systems developers, VanHooks combines a unified API with support for multiple hooking techniques, architectures, and operating systems.
-
-Whether you're reverse engineering a legacy game engine, building runtime analysis tools, instrumenting native applications, or researching low-level system behavior, VanHooks is designed to provide a single ecosystem for the job.
-
----
-
-## Independent Architecture
-
-VanHooks is not a fork of SafetyHook, MinHook, PolyHook2, Microsoft Detours, or any other hooking library.
-
-The framework is being developed as an independent implementation with its own:
-
-- API design
-- Hook management model
-- Cross-platform architecture
-- Relocation systems
-- Instrumentation workflows
-- Long-term roadmap
-
-While VanHooks draws inspiration from decades of work across the reverse engineering community, its goal is not to replicate existing projects—it is to provide a unified platform that scales from simple hooks to large-scale instrumentation projects.
+VanHooks is a production-grade, cross-platform function hooking library for C++23. It provides inline trampoline hooks, import table hooks, procedure linkage table hooks, virtual function table hooks, and mid-function register-context hooks — all through a single unified API backed by `std::expected` error handling and RAII lifetime management.
 
 ---
 
 ## Why VanHooks?
 
-Most hooking libraries specialize in a single area.
-
-- Some focus primarily on inline hooks.
-- Some target a single operating system.
-- Some expose powerful functionality through multiple disconnected APIs.
-- Some were never designed for modern ARM64 environments.
-
-VanHooks is built around a different idea:
-
-> One framework. One mental model. Every hook type.
-
----
-
-## Features
-
-### Hook Types
-
-- Inline Hooks
-- Trampoline Hooks
-- Mid-Function Hooks
-- VTable Hooks
-- Import Address Table (IAT) Hooks
-- Export Address Table (EAT) Hooks
-- PLT/GOT Hooks
-- Runtime Hook Chaining
-- Managed Hook Groups
-- Unified Hook Lifecycle Management
-
-### Platform Support
-
-| Platform | Status |
-|-----------|----------|
-| Windows x86 | Supported |
-| Windows x64 | Supported |
-| Windows ARM64 | Supported |
-| Linux x64 | Supported |
-| Linux ARM64 | Supported |
-| macOS Intel | Supported |
-| macOS Apple Silicon | Supported |
+| | MinHook | EasyHook | SafetyHook | PolyHook2 | **VanHooks** |
+|---|---|---|---|---|---|
+| **Platforms** | Win | Win | Win / Lin | Win | **Win / Lin / macOS** |
+| **ARM64** | ✗ | ✗ | ✗ | ✗ | **✓** |
+| **Hook types** | Trampoline | Trampoline + IAT | Trampoline | Trampoline + IAT + VTable | **Trampoline + IAT + PLT + VTable + Mid** |
+| **Error handling** | C enum | C enum | exceptions | exceptions | **`std::expected`** |
+| **C++ standard** | C89 API | .NET | C++23 | C++20 | **C++23** |
+| **macOS lazy pointers** | ✗ | ✗ | ✗ | ✗ | **✓** |
+| **RAII hook lifetime** | ✗ | ✗ | ✓ | ✓ | **✓** |
+| **Batch group operations** | ✗ | ✗ | ✗ | ✗ | **✓** |
+| **Hook chaining** | ✗ | ✓ | ✗ | ✓ | **✓** |
+| **Mid-function hooks** | ✗ | ✗ | ✓ | ✗ | **✓** |
 
 ---
 
-## Simple By Default
+## Requirements
 
-```cpp
-auto hook = vh::hook(target, detour);
+| Requirement | Minimum |
+|---|---|
+| C++ standard | C++23 |
+| MSVC | 19.38+ (Visual Studio 2022 17.8+) |
+| GCC | 13+ |
+| Clang | 17+ |
+| CMake | 3.25+ (optional — drop-in use requires no build system) |
+| Windows target | Windows 10 1903 / Windows Server 2019 |
 
-hook.enable();
+No runtime dependencies. Zydis is compiled into the library.
+
+---
+
+## Installation
+
+### Option A — Drop-in (precompiled, no build system required)
+
+Copy `include/` into your project and link against the precompiled `.lib` for your target.
+
+**Library selection:**
+
+| Target | Configuration | Path |
+|---|---|---|
+| Windows x64 | Release | `lib/win-x64/Release/vanhooks.lib` |
+| Windows x64 | Debug | `lib/win-x64/Debug/vanhooks.lib` |
+| Windows x86 | Release | `lib/win-x86/Release/vanhooks.lib` |
+| Windows x86 | Debug | `lib/win-x86/Debug/vanhooks.lib` |
+
+All precompiled libs use a static CRT (`/MT` Release, `/MTd` Debug). No Visual C++ Redistributable is required. See [`lib/README.md`](lib/README.md) for MSVC project settings and ARM64 / Linux / macOS build-from-source instructions.
+
+**CMake (drop-in):**
+
+```cmake
+if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+    set(VH_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/lib/win-x64")
+else()
+    set(VH_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/lib/win-x86")
+endif()
+
+add_library(VanHooks::vanhooks STATIC IMPORTED)
+set_target_properties(VanHooks::vanhooks PROPERTIES
+    IMPORTED_LOCATION_RELEASE "${VH_LIB_DIR}/Release/vanhooks.lib"
+    IMPORTED_LOCATION_DEBUG   "${VH_LIB_DIR}/Debug/vanhooks.lib"
+    INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+target_link_libraries(my_target PRIVATE VanHooks::vanhooks)
 ```
 
-Advanced workflows remain available through the same ecosystem.
+**MSVC project (manual):**
+
+1. **Additional Include Directories** → add `include\`
+2. **Additional Library Directories** → add `lib\win-x64\Release\` (adjust for arch/config)
+3. **Additional Dependencies** → add `vanhooks.lib`
+4. **Runtime Library** → `Multi-threaded (/MT)` for Release, `Multi-threaded Debug (/MTd)` for Debug
+
+---
+
+## Quick Start
+
+One include is all you need:
 
 ```cpp
-auto hook = vh::vtable(object, index)
-    .detour(myDetour)
-    .enable();
+#include <vh/vh.hpp>
 ```
 
-A beginner should be able to install a hook quickly.
+Everything lives in the `vh::` namespace.
 
-An expert should be able to instrument an entire application without leaving the framework.
+### Intercept a function (no call-through needed)
 
----
+```cpp
+int my_detour(int a, int b) {
+    printf("intercepted!\n");
+    return a + b;
+}
 
-## Ecosystem Positioning
+auto r = vh::hook(&target_fn, &my_detour);
+if (!r) {
+    printf("failed: %s\n", vh::error_to_string(r.error()).data());
+}
+// Hook is live. r->valid() == true.
+// Hook removes itself when r goes out of scope.
+```
 
-VanHooks exists alongside several excellent projects.
+### Intercept a function and call the original
 
-### SafetyHook
+```cpp
+static int (*orig_fn)(int, int) = nullptr;
 
-SafetyHook focuses on safe and modern inline hooking.
+int my_detour(int a, int b) {
+    printf("add(%d, %d)\n", a, b);
+    return orig_fn(a, b);   // call through to real function
+}
 
-VanHooks shares an emphasis on usability while extending into broader runtime instrumentation and cross-platform workflows.
+auto r = vh::hook(&target_fn, &my_detour, &orig_fn);
+```
 
-### MinHook
+### Hook a system function by name
 
-MinHook remains one of the most respected lightweight Windows hooking libraries.
+```cpp
+static decltype(&MessageBoxW) orig_mbw = nullptr;
 
-VanHooks expands beyond this scope with multi-platform and multi-architecture support.
+BOOL WINAPI hk_mbw(HWND h, LPCWSTR text, LPCWSTR cap, UINT type) {
+    return orig_mbw(h, L"[Intercepted]", cap, type);
+}
 
-### PolyHook2
-
-PolyHook2 provides a rich collection of advanced hooking techniques.
-
-VanHooks pursues a unified framework approach where different hook types and platforms share a consistent developer experience.
-
-### Microsoft Detours
-
-Microsoft Detours helped define modern API interception.
-
-VanHooks builds upon the broader instrumentation tradition while targeting modern C++ development, ARM64 platforms, and reverse-engineering workflows.
-
----
-
-## Built For
-
-- Reverse Engineering
-- Game Modding
-- Runtime Instrumentation
-- Binary Analysis
-- Engine Research
-- Performance Profiling
-- Security Research
-- Systems Development
+auto r = vh::hook("user32", "MessageBoxW", &hk_mbw, &orig_mbw);
+```
 
 ---
 
-## Philosophy
+## Hook Types
 
-### Understand First
+VanHooks provides five hook types, all returning the same `Result<Hook>` type.
 
-Software should be observable.
+### Inline (trampoline) hook
 
-### Modify Second
+Patches the first bytes of the target function with a jump. Works on any function whose prologue is large enough — 5 bytes on x86/x64, 16 bytes on ARM64.
 
-Hooking should be reliable, predictable, and maintainable.
+```cpp
+auto r = vh::inline_hook(&target, &detour, &orig, { .tag = "Module.Function" });
+```
 
-### Never Lose Control
+### IAT hook — Windows
 
-Abstractions should simplify workflows without hiding critical details.
+Patches an Import Address Table entry. Intercepts calls from a specific module without modifying the target function itself. Useful for short functions that cannot be safely inline-hooked.
+
+```cpp
+// Patch the IAT entry in a specific module
+auto r = vh::iat_hook("MessageBoxW", (void*)&hk_mbw,
+                      { .module_name = "my_app.exe", .tag = "IAT.MessageBoxW" });
+
+// Patch every loaded module's IAT entry at once
+auto hooks = vh::iat_hook_all("malloc", (void*)&hk_malloc);
+```
+
+### PLT hook — Linux / macOS
+
+Patches the Procedure Linkage Table (Linux) or lazy pointer (macOS) used by the dynamic linker. The POSIX equivalent of an IAT hook.
+
+```cpp
+auto r = vh::plt_hook("libc", "malloc", (void*)&hk_malloc, { .tag = "libc.malloc" });
+```
+
+### VTable hook
+
+Patches a single slot in a C++ virtual function table.
+
+```cpp
+// Hook IDXGISwapChain::Present (slot 8)
+void** vtbl = *reinterpret_cast<void***>(swap_chain_ptr);
+
+static HRESULT (STDMETHODCALLTYPE *orig_Present)(IDXGISwapChain*, UINT, UINT) = nullptr;
+
+HRESULT STDMETHODCALLTYPE hk_Present(IDXGISwapChain* sc, UINT sync, UINT flags) {
+    // render overlay
+    return orig_Present(sc, sync, flags);
+}
+
+auto r = vh::vtable_hook(vtbl, 8,
+                         (void*)&hk_Present,
+                         (void**)&orig_Present,
+                         { .tag = "DXGI.Present" });
+```
+
+### Mid-function hook
+
+Installs a hook at a byte offset inside a function. Does not redirect control flow — observes and optionally modifies CPU register state at that point, then continues original execution.
+
+```cpp
+auto r = vh::mid_hook(game_update_fn,
+    [](vh::MidContext* ctx) noexcept {
+        player_health = static_cast<int>(ctx->rax);
+    },
+    { .offset = 0x1C, .tag = "Game.HealthReadback" });
+```
 
 ---
 
-## Vision
+## Hook Lifetime and RAII
 
-To build one of the most capable and approachable instrumentation frameworks available for modern native software.
+Every hook creation function returns `Result<Hook>`. The `Hook` object removes the hook automatically when it is destroyed — you do not need to call remove manually in normal use.
 
-Not simply another hooking library.
+```cpp
+{
+    auto r = vh::hook(&fn, &detour);
+    // hook is live here
+}
+// hook automatically removed when r goes out of scope
+```
 
-A platform for understanding software.
+To control hook state explicitly:
+
+```cpp
+auto r = vh::hook(&fn, &detour);
+auto& h = *r;
+
+h.disable();    // deactivate without removing
+h.enable();     // reactivate
+h.remove();     // permanently remove (destructor also does this)
+
+h.valid();      // is the hook installed?
+h.enabled();    // is it currently active?
+h.tag();        // the tag string set at creation
+```
 
 ---
 
-## TeamVanilla
+## Groups — Batch Lifecycle Management
 
-Created and maintained by TeamVanilla.
+A `Group` owns multiple hooks and enables, disables, or removes them all inside a single thread-suspension window — significantly cheaper than operating on each hook individually.
 
-Building tools for people who want to understand how software really works.
+```cpp
+auto grp = vh::group("RenderHooks");
+
+grp.add(vh::vtable_hook(vtbl, 8,  (void*)&hk_Present))
+   .add(vh::vtable_hook(vtbl, 16, (void*)&hk_Reset))
+   .add(vh::iat_hook("CreateDevice", (void*)&hk_CreateDevice));
+
+grp.enable();   // one suspension window for all three
+grp.disable();  // same
+
+// Find a specific hook by tag
+grp.at("DXGI.Present").disable();
+
+// Iterate
+for (auto& h : grp) {
+    printf("%s: %s\n", h.tag().c_str(), h.enabled() ? "on" : "off");
+}
+
+// Maximum performance — queue operations, flush once
+grp.queue_enable().apply();
+```
 
 ---
 
-**If a function can execute, VanHooks should be able to reach it.**
+## Hook Chaining
+
+A second detour can be inserted in front of an existing hook. Execution order after chaining:
+
+```
+new_detour → original_detour → real_function
+```
+
+Chain links must be removed in reverse order of creation.
+
+```cpp
+auto base = vh::inline_hook(&fn, &detour1, &orig1).value();
+
+static decltype(&fn) chain_orig = nullptr;
+auto link = base.chain(&detour2, &chain_orig).value();
+
+// Later, in reverse order:
+link.remove();
+base.remove();
+```
+
+---
+
+## Error Handling
+
+VanHooks uses `std::expected<T, vh::Error>` (aliased as `vh::Result<T>`) throughout. No exceptions are thrown, no global error state, zero overhead on the success path.
+
+```cpp
+auto r = vh::hook(&fn, &detour, &orig);
+
+if (!r) {
+    printf("failed: %s\n", vh::error_to_string(r.error()).data());
+    return;
+}
+
+vh::Hook h = std::move(*r);
+```
+
+Chain results with `.and_then()` and `.transform_error()`:
+
+```cpp
+auto r = vh::hook(&fn, &detour, &orig)
+    .and_then([](vh::Hook h) -> vh::Result<vh::Hook> {
+        h.disable();
+        return h;
+    });
+```
+
+See the [Functions Guide](VanHooks_Functions_Guide.md) for the full error code reference.
+
+---
+
+## Multi-Module Projects — HookRegistry
+
+`HookRegistry` is a process-wide singleton that owns named Groups. Use it when multiple DLLs in the same process register hooks independently and a single shutdown call should clean all of them up.
+
+```cpp
+// Module A (render DLL):
+auto render = vh::group("Render");
+render.add(vh::vtable_hook(vtbl, 8, (void*)&hk_Present));
+vh::HookRegistry::global().register_group(std::move(render));
+
+// Module B (network DLL):
+auto net = vh::group("Network");
+net.add(vh::api_hook("ws2_32", "send", &hk_send));
+vh::HookRegistry::global().register_group(std::move(net));
+
+// Shutdown — one call removes everything from both modules:
+vh::HookRegistry::global().remove_all();
+```
+
+---
+
+## Platform Support
+
+| Platform | x86 | x64 | ARM64 |
+|---|---|---|---|
+| Windows | ✓ | ✓ | Build from source |
+| Linux | — | ✓ | ✓ |
+| macOS | — | ✓ | ✓ |
+
+Precompiled `.lib` files are provided for Windows x86 and x64. ARM64 and POSIX targets require a source build — see [`lib/README.md`](lib/README.md).
+
+---
+
+## Documentation
+
+- **[VanHooks_Functions_Guide.md](VanHooks_Functions_Guide.md)** — Complete API reference: every function, every configuration field, every error code.
+- **[lib/README.md](lib/README.md)** — Precompiled library matrix, MSVC project setup, and build-from-source instructions for ARM64 and POSIX.
+
+---
+
+## DEF CON 34
+
+VanHooks is being presented at **DEF CON 34, August 2026, LVCC West Hall.**
+
+*"VanHooks: How We Rewrote the Hook — Cross-Platform C++23 Function Interception from x64 to ARM64"*
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE)
