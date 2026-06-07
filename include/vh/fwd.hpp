@@ -21,8 +21,4 @@ namespace config {
     struct Mid;
 } // namespace config
 
-namespace advanced {
-    class Engine;
-} // namespace advanced
-
 } // namespace vh
