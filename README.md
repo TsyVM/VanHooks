@@ -1,5 +1,5 @@
 # VanHooks
-<img>ttps://cdn.discordapp.com/attachments/1512188478329196735/1512376847227289682/Screenshot_20260605_034442_Gallery.jpg</img>
+<img src="[https://your-image-url-here.jpg](https://cdn.discordapp.com/attachments/1512188478329196735/1512376847227289682/Screenshot_20260605_034442_Gallery.jpg" alt="VanHooks Banner">
 **Modern C++23 Cross-Platform Function Hooking Library**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
