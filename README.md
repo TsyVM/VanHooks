@@ -1,37 +1,49 @@
-# VanHooks
+<div align="center">
 
-**Modern C++23 Cross-Platform Function Hooking Library**
+<img width="100%" src="https://capsule-render.vercel.app/api?type=waving&color=0:000000,50:8B0000,100:000000&height=220&section=header&text=VanHooks&fontSize=70&fontColor=FF3B3B&animation=fadeIn&fontAlignY=35&desc=Modern%20C%2B%2B23%20Cross-Platform%20Function%20Hooking%20Library&descAlignY=55&descSize=18&descColor=CCCCCC"/>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+<a href="#">
+<img src="https://readme-typing-svg.demolab.com/?lines=Trampoline+%C2%B7+IAT+%C2%B7+PLT+%C2%B7+VTable+%C2%B7+Mid-Function;One+API.+Every+Platform.+Zero+Exceptions.;std%3A%3Aexpected+all+the+way+down.&font=Fira%20Code&center=true&width=650&height=45&color=FF3B3B&vCenter=true&size=22&pause=1800"/>
+</a>
 
-[![C++23](https://img.shields.io/badge/C%2B%2B-23-blue.svg)](https://en.cppreference.com/w/cpp/23)
+<br/>
 
-[![Windows](https://img.shields.io/badge/Windows-x86%20%7C%20x64-0078D4?logo=windows)](lib/)
-[![Linux](https://img.shields.io/badge/Linux-x64%20%7C%20ARM64-FCC624?logo=linux&logoColor=black)](lib/)
-[![macOS](https://img.shields.io/badge/macOS-x64%20%7C%20ARM64-000000?logo=apple)](lib/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-FF3B3B?style=for-the-badge&labelColor=000000)](LICENSE)
+[![C++23](https://img.shields.io/badge/C%2B%2B-23-FF3B3B?style=for-the-badge&labelColor=000000&logo=cplusplus&logoColor=FF3B3B)](https://en.cppreference.com/w/cpp/23)
+[![Windows](https://img.shields.io/badge/Windows-x86%20%7C%20x64-FF3B3B?style=for-the-badge&labelColor=000000&logo=windows&logoColor=FF3B3B)](lib/)
+[![Linux](https://img.shields.io/badge/Linux-x64%20%7C%20ARM64-FF3B3B?style=for-the-badge&labelColor=000000&logo=linux&logoColor=FF3B3B)](lib/)
+[![macOS](https://img.shields.io/badge/macOS-x64%20%7C%20ARM64-FF3B3B?style=for-the-badge&labelColor=000000&logo=apple&logoColor=FF3B3B)](lib/)
+
+</div>
+
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
 VanHooks is a production-grade, cross-platform function hooking library for C++23. It provides inline trampoline hooks, import table hooks, procedure linkage table hooks, virtual function table hooks, and mid-function register-context hooks — all through a single unified API backed by `std::expected` error handling and RAII lifetime management.
 
----
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
-## Why VanHooks?
+## 🩸 Why VanHooks?
+
+<div align="center">
 
 | | MinHook | EasyHook | SafetyHook | PolyHook2 | **VanHooks** |
-|---|---|---|---|---|---|
-| **Platforms** | Win | Win | Win / Lin | Win | **Win / Lin / macOS** |
-| **ARM64** | ✗ | ✗ | ✗ | ✗ | **✓** |
-| **Hook types** | Trampoline | Trampoline + IAT | Trampoline | Trampoline + IAT + VTable | **Trampoline + IAT + PLT + VTable + Mid** |
-| **Error handling** | C enum | C enum | exceptions | exceptions | **`std::expected`** |
-| **C++ standard** | C89 API | .NET | C++23 | C++20 | **C++23** |
-| **macOS lazy pointers** | ✗ | ✗ | ✗ | ✗ | **✓** |
-| **RAII hook lifetime** | ✗ | ✗ | ✓ | ✓ | **✓** |
-| **Batch group operations** | ✗ | ✗ | ✗ | ✗ | **✓** |
-| **Hook chaining** | ✗ | ✓ | ✗ | ✓ | **✓** |
-| **Mid-function hooks** | ✗ | ✗ | ✓ | ✗ | **✓** |
+|---|:---:|:---:|:---:|:---:|:---:|
+| **Platforms** | Win | Win | Win / Lin | Win | 🔴 **Win / Lin / macOS** |
+| **ARM64** | ✗ | ✗ | ✗ | ✗ | 🔴 **✓** |
+| **Hook types** | Trampoline | Trampoline + IAT | Trampoline | Trampoline + IAT + VTable | 🔴 **Trampoline + IAT + PLT + VTable + Mid** |
+| **Error handling** | C enum | C enum | exceptions | exceptions | 🔴 **`std::expected`** |
+| **C++ standard** | C89 API | .NET | C++23 | C++20 | 🔴 **C++23** |
+| **macOS lazy pointers** | ✗ | ✗ | ✗ | ✗ | 🔴 **✓** |
+| **RAII hook lifetime** | ✗ | ✗ | ✓ | ✓ | 🔴 **✓** |
+| **Batch group operations** | ✗ | ✗ | ✗ | ✗ | 🔴 **✓** |
+| **Hook chaining** | ✗ | ✓ | ✗ | ✓ | 🔴 **✓** |
+| **Mid-function hooks** | ✗ | ✗ | ✓ | ✗ | 🔴 **✓** |
 
----
+</div>
 
-## Requirements
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
+
+## ⚙️ Requirements
 
 | Requirement | Minimum |
 |---|---|
@@ -42,11 +54,11 @@ VanHooks is a production-grade, cross-platform function hooking library for C++2
 | CMake | 3.25+ (optional — drop-in use requires no build system) |
 | Windows target | Windows 10 1903 / Windows Server 2019 |
 
-No runtime dependencies. Zydis is compiled into the library.
+> No runtime dependencies. Zydis is compiled into the library.
 
----
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
-## Installation
+## 📥 Installation
 
 ### Option A — Drop-in (precompiled, no build system required)
 
@@ -86,9 +98,9 @@ target_link_libraries(my_target PRIVATE VanHooks::vanhooks)
 3. **Additional Dependencies** → add `vanhooks.lib`
 4. **Runtime Library** → `Multi-threaded (/MT)` for Release, `Multi-threaded Debug (/MTd)` for Debug
 
----
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
-## Quick Start
+## 🩸 Quick Start
 
 One include is all you need:
 
@@ -139,9 +151,9 @@ BOOL WINAPI hk_mbw(HWND h, LPCWSTR text, LPCWSTR cap, UINT type) {
 auto r = vh::hook("user32", "MessageBoxW", &hk_mbw, &orig_mbw);
 ```
 
----
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
-## Hook Types
+## 🪝 Hook Types
 
 VanHooks provides five hook types, all returning the same `Result<Hook>` type.
 
@@ -207,9 +219,9 @@ auto r = vh::mid_hook(game_update_fn,
     { .offset = 0x1C, .tag = "Game.HealthReadback" });
 ```
 
----
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
-## Hook Lifetime and RAII
+## ♻️ Hook Lifetime and RAII
 
 Every hook creation function returns `Result<Hook>`. The `Hook` object removes the hook automatically when it is destroyed — you do not need to call remove manually in normal use.
 
@@ -236,9 +248,9 @@ h.enabled();    // is it currently active?
 h.tag();        // the tag string set at creation
 ```
 
----
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
-## Groups — Batch Lifecycle Management
+## 🗂️ Groups — Batch Lifecycle Management
 
 A `Group` owns multiple hooks and enables, disables, or removes them all inside a single thread-suspension window — significantly cheaper than operating on each hook individually.
 
@@ -264,9 +276,9 @@ for (auto& h : grp) {
 grp.queue_enable().apply();
 ```
 
----
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
-## Hook Chaining
+## 🔗 Hook Chaining
 
 A second detour can be inserted in front of an existing hook. Execution order after chaining:
 
@@ -287,9 +299,9 @@ link.remove();
 base.remove();
 ```
 
----
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
-## Error Handling
+## ❗ Error Handling
 
 VanHooks uses `std::expected<T, vh::Error>` (aliased as `vh::Result<T>`) throughout. No exceptions are thrown, no global error state, zero overhead on the success path.
 
@@ -316,9 +328,9 @@ auto r = vh::hook(&fn, &detour, &orig)
 
 See the [Functions Guide](VanHooks_Functions_Guide.md) for the full error code reference.
 
----
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
-## Multi-Module Projects — HookRegistry
+## 🧩 Multi-Module Projects — HookRegistry
 
 `HookRegistry` is a process-wide singleton that owns named Groups. Use it when multiple DLLs in the same process register hooks independently and a single shutdown call should clean all of them up.
 
@@ -337,26 +349,37 @@ vh::HookRegistry::global().register_group(std::move(net));
 vh::HookRegistry::global().remove_all();
 ```
 
----
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
-## Platform Support
+## 🖥️ Platform Support
+
+<div align="center">
 
 | Platform | x86 | x64 | ARM64 |
-|---|---|---|---|
-| Windows | ✓ | ✓ | Build from source |
-| Linux | — | ✓ | ✓ |
-| macOS | — | ✓ | ✓ |
+|:---:|:---:|:---:|:---:|
+| 🪟 Windows | ✅ | ✅ | 🟡 Build from source |
+| 🐧 Linux | — | ✅ | ✅ |
+| 🍎 macOS | — | ✅ | ✅ |
+
+</div>
 
 Precompiled `.lib` files are provided for Windows x86 and x64. ARM64 and POSIX targets require a source build — see [`lib/README.md`](lib/README.md).
 
----
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
-## Documentation
+## 📚 Documentation
 
 - **[VanHooks_Functions_Guide.md](VanHooks_Functions_Guide.md)** — Complete API reference: every function, every configuration field, every error code.
 - **[lib/README.md](lib/README.md)** — Precompiled library matrix, MSVC project setup, and build-from-source instructions for ARM64 and POSIX.
----
 
-## License
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
-MIT — see [LICENSE](LICENSE)
+<div align="center">
+
+## 📄 License
+
+**MIT** — see [LICENSE](LICENSE)
+
+<img width="100%" src="https://capsule-render.vercel.app/api?type=waving&color=0:000000,50:8B0000,100:000000&height=120&section=footer"/>
+
+</div>
