@@ -366,20 +366,6 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release   # VH_ENABLE_NET=ON by default
 cmake -B build -DVH_ENABLE_NET=OFF          # hooking only, smaller binary
 ```
 
-**System prerequisite:** `libpcap-dev` (Linux/macOS) or the
-[Npcap SDK](https://npcap.com/#download) (Windows) — provides the OS
-capture driver, not any userspace library.
-
-```bash
-# Debian/Ubuntu
-sudo apt install libpcap-dev
-
-# macOS
-brew install libpcap
-
-# Windows — install Npcap SDK and set NPCAP_SDK env var, then cmake
-```
-
 ### Quick start
 
 ```cpp
