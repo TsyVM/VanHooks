@@ -14,11 +14,26 @@
 [![Linux](https://img.shields.io/badge/Linux-x64%20%7C%20ARM64-FF3B3B?style=for-the-badge&labelColor=000000&logo=linux&logoColor=FF3B3B)](lib/)
 [![macOS](https://img.shields.io/badge/macOS-x64%20%7C%20ARM64-FF3B3B?style=for-the-badge&labelColor=000000&logo=apple&logoColor=FF3B3B)](lib/)
 
+<br/>
+
+[![Stars](https://img.shields.io/github/stars/yourname/vanhooks?style=for-the-badge&color=FF3B3B&labelColor=000000)](../../stargazers)
+[![Issues](https://img.shields.io/github/issues/yourname/vanhooks?style=for-the-badge&color=FF3B3B&labelColor=000000)](../../issues)
+[![Last Commit](https://img.shields.io/github/last-commit/yourname/vanhooks?style=for-the-badge&color=FF3B3B&labelColor=000000)](../../commits)
+[![Downloads](https://img.shields.io/github/downloads/yourname/vanhooks/total?style=for-the-badge&color=FF3B3B&labelColor=000000)](../../releases)
+
 </div>
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
 VanHooks is a production-grade, cross-platform function hooking library for C++23. It provides inline trampoline hooks, import table hooks, procedure linkage table hooks, virtual function table hooks, and mid-function register-context hooks — all through a single unified API backed by `std::expected` error handling and RAII lifetime management. A built-in network layer, **VanNet**, ships in the same library for live packet capture and protocol parsing.
+
+<div align="center">
+
+### 📑 Table of Contents
+
+[Why VanHooks](#-why-vanhooks) · [Features](#-features-at-a-glance) · [Requirements](#️-requirements) · [Installation](#-installation) · [Quick Start](#-quick-start) · [Hook Types](#-hook-types) · [Lifetime & RAII](#️-hook-lifetime-and-raii) · [Groups](#️-groups--batch-lifecycle-management) · [Chaining](#-hook-chaining) · [Error Handling](#-error-handling) · [HookRegistry](#-multi-module-projects--hookregistry) · [VanNet](#-vannet--built-in-network-layer) · [Platform Support](#️-platform-support) · [Roadmap](#️-roadmap) · [FAQ](#-faq) · [Docs](#-documentation)
+
+</div>
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
@@ -39,6 +54,22 @@ VanHooks is a production-grade, cross-platform function hooking library for C++2
 | **Hook chaining** | ✗ | ✓ | ✗ | ✓ | 🔴 **✓** |
 | **Mid-function hooks** | ✗ | ✗ | ✓ | ✗ | 🔴 **✓** |
 | **Built-in packet capture** | ✗ | ✗ | ✗ | ✗ | 🔴 **✓ (VanNet)** |
+
+</div>
+
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
+
+## ⚡ Features at a Glance
+
+<div align="center">
+
+| 🪝 | 🧵 | 🧩 | 📦 |
+|:---:|:---:|:---:|:---:|
+| **5 Hook Types** | **Zero Exceptions** | **RAII Everywhere** | **Single Header** |
+| Trampoline · IAT · PLT · VTable · Mid-function | `std::expected` end to end | Hooks and groups clean up on scope exit | `#include <vh/vh.hpp>` and go |
+| 🌐 | 🖥️ | ⚙️ | 🔗 |
+| **VanNet Built-in** | **True Cross-Platform** | **C++23 Native** | **Chainable Hooks** |
+| Live capture + full protocol parsing | Windows · Linux · macOS · ARM64 | Concepts, `expected`, modern idioms | Stack detours without losing the original |
 
 </div>
 
@@ -74,7 +105,8 @@ Copy `include/` into your project and link against the precompiled `.lib` for yo
 
 All precompiled libs use a static CRT (`/MT` Release, `/MTd` Debug). No Visual C++ Redistributable is required. See [`lib/README.md`](lib/README.md) for MSVC project settings and ARM64 / Linux / macOS build-from-source instructions.
 
-**CMake (drop-in):**
+<details>
+<summary><b>🔧 CMake (drop-in) — click to expand</b></summary>
 
 ```cmake
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)
@@ -92,12 +124,17 @@ set_target_properties(VanHooks::vanhooks PROPERTIES
 target_link_libraries(my_target PRIVATE VanHooks::vanhooks)
 ```
 
-**MSVC project (manual):**
+</details>
+
+<details>
+<summary><b>🔧 MSVC project (manual) — click to expand</b></summary>
 
 1. **Additional Include Directories** → add `include\`
 2. **Additional Library Directories** → add `lib\win-x64\Release\` (adjust for arch/config)
 3. **Additional Dependencies** → add `vanhooks.lib`
 4. **Runtime Library** → `Multi-threaded (/MT)` for Release, `Multi-threaded Debug (/MTd)` for Debug
+
+</details>
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
@@ -158,7 +195,8 @@ auto r = vh::hook("user32", "MessageBoxW", &hk_mbw, &orig_mbw);
 
 VanHooks provides five hook types, all returning the same `Result<Hook>` type.
 
-### Inline (trampoline) hook
+<details open>
+<summary><b>Inline (trampoline) hook</b></summary>
 
 Patches the first bytes of the target function with a jump. Works on any function whose prologue is large enough — 5 bytes on x86/x64, 16 bytes on ARM64.
 
@@ -166,7 +204,10 @@ Patches the first bytes of the target function with a jump. Works on any functio
 auto r = vh::inline_hook(&target, &detour, &orig, { .tag = "Module.Function" });
 ```
 
-### IAT hook — Windows
+</details>
+
+<details>
+<summary><b>IAT hook — Windows</b></summary>
 
 Patches an Import Address Table entry. Intercepts calls from a specific module without modifying the target function itself. Useful for short functions that cannot be safely inline-hooked.
 
@@ -179,7 +220,10 @@ auto r = vh::iat_hook("MessageBoxW", (void*)&hk_mbw,
 auto hooks = vh::iat_hook_all("malloc", (void*)&hk_malloc);
 ```
 
-### PLT hook — Linux / macOS
+</details>
+
+<details>
+<summary><b>PLT hook — Linux / macOS</b></summary>
 
 Patches the Procedure Linkage Table (Linux) or lazy pointer (macOS) used by the dynamic linker. The POSIX equivalent of an IAT hook.
 
@@ -187,7 +231,10 @@ Patches the Procedure Linkage Table (Linux) or lazy pointer (macOS) used by the 
 auto r = vh::plt_hook("libc", "malloc", (void*)&hk_malloc, { .tag = "libc.malloc" });
 ```
 
-### VTable hook
+</details>
+
+<details>
+<summary><b>VTable hook</b></summary>
 
 Patches a single slot in a C++ virtual function table.
 
@@ -208,7 +255,10 @@ auto r = vh::vtable_hook(vtbl, 8,
                          { .tag = "DXGI.Present" });
 ```
 
-### Mid-function hook
+</details>
+
+<details>
+<summary><b>Mid-function hook</b></summary>
 
 Installs a hook at a byte offset inside a function. Does not redirect control flow — observes and optionally modifies CPU register state at that point, then continues original execution.
 
@@ -219,6 +269,8 @@ auto r = vh::mid_hook(game_update_fn,
     },
     { .offset = 0x1C, .tag = "Game.HealthReadback" });
 ```
+
+</details>
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
@@ -423,10 +475,59 @@ Precompiled `.lib` files are provided for Windows x86 and x64. ARM64 and POSIX t
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
+## 🛣️ Roadmap
+
+- [x] Trampoline, IAT, PLT, VTable, and mid-function hooks
+- [x] `std::expected`-based error handling
+- [x] Batch group operations with single-suspension flush
+- [x] VanNet packet capture and protocol parsing
+- [ ] ARM64 precompiled binaries (currently source-build only)
+- [ ] Linux/macOS precompiled binaries
+- [ ] Hot-reloadable hook configuration
+- [ ] Built-in symbol resolver for stripped binaries
+
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
+
+## ❓ FAQ
+
+<details>
+<summary><b>Does VanHooks throw exceptions?</b></summary>
+<br/>
+No. Every fallible operation returns <code>vh::Result&lt;T&gt;</code> (<code>std::expected&lt;T, vh::Error&gt;</code>). The library never throws from its own code paths.
+</details>
+
+<details>
+<summary><b>Do I need CMake to use VanHooks?</b></summary>
+<br/>
+No — drop-in usage only requires copying <code>include/</code> and linking the precompiled <code>.lib</code>. CMake is optional and mainly useful for ARM64/POSIX source builds or VanNet configuration.
+</details>
+
+<details>
+<summary><b>Can I use VanHooks without VanNet?</b></summary>
+<br/>
+Yes. Build with <code>-DVH_ENABLE_NET=OFF</code> to exclude the packet capture and protocol parsing layer entirely, producing a smaller binary with only the hooking engine.
+</details>
+
+<details>
+<summary><b>What happens if I hook a function that's already hooked by another library?</b></summary>
+<br/>
+Behavior depends on hook type and installation order. Use <code>HookRegistry</code> and <code>tag()</code> to track ownership across modules, and prefer <code>chain()</code> over re-hooking the same target directly.
+</details>
+
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
+
 ## 📚 Documentation
 
 - **[VanHooks_Functions_Guide.md](VanHooks_Functions_Guide.md)** — Complete API reference: every function, every configuration field, every error code.
 - **[lib/README.md](lib/README.md)** — Precompiled library matrix, MSVC project setup, and build-from-source instructions for ARM64 and POSIX.
+
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
+
+## 🤝 Contributing
+
+Pull requests are welcome. For major changes, open an issue first to discuss what you'd like to change.
+
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-FF3B3B?style=for-the-badge&labelColor=000000)](../../pulls)
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
@@ -435,6 +536,12 @@ Precompiled `.lib` files are provided for Windows x86 and x64. ARM64 and POSIX t
 ## 📄 License
 
 **MIT** — see [LICENSE](LICENSE)
+
+### ⭐ Star History
+
+<a href="https://star-history.com/#yourname/vanhooks&Date">
+  <img src="https://api.star-history.com/svg?repos=yourname/vanhooks&type=Date&theme=dark" width="60%"/>
+</a>
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=waving&color=0:000000,50:8B0000,100:000000&height=120&section=footer"/>
 
