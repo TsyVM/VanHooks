@@ -18,7 +18,7 @@
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
-VanHooks is a production-grade, cross-platform function hooking library for C++23. It provides inline trampoline hooks, import table hooks, procedure linkage table hooks, virtual function table hooks, and mid-function register-context hooks — all through a single unified API backed by `std::expected` error handling and RAII lifetime management.
+VanHooks is a production-grade, cross-platform function hooking library for C++23. It provides inline trampoline hooks, import table hooks, procedure linkage table hooks, virtual function table hooks, and mid-function register-context hooks — all through a single unified API backed by `std::expected` error handling and RAII lifetime management. A built-in network layer, **VanNet**, ships in the same library for live packet capture and protocol parsing.
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
@@ -38,6 +38,7 @@ VanHooks is a production-grade, cross-platform function hooking library for C++2
 | **Batch group operations** | ✗ | ✗ | ✗ | ✗ | 🔴 **✓** |
 | **Hook chaining** | ✗ | ✓ | ✗ | ✓ | 🔴 **✓** |
 | **Mid-function hooks** | ✗ | ✗ | ✓ | ✗ | 🔴 **✓** |
+| **Built-in packet capture** | ✗ | ✗ | ✗ | ✗ | 🔴 **✓ (VanNet)** |
 
 </div>
 
@@ -54,7 +55,7 @@ VanHooks is a production-grade, cross-platform function hooking library for C++2
 | CMake | 3.25+ (optional — drop-in use requires no build system) |
 | Windows target | Windows 10 1903 / Windows Server 2019 |
 
-> No runtime dependencies. Zydis is compiled into the library.
+> No runtime dependencies for the hooking engine. Zydis is compiled into the library. VanNet (optional) requires `libpcap-dev` / the Npcap SDK — see [VanNet](#-vannet--built-in-network-layer) below.
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
@@ -348,6 +349,75 @@ vh::HookRegistry::global().register_group(std::move(net));
 // Shutdown — one call removes everything from both modules:
 vh::HookRegistry::global().remove_all();
 ```
+
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
+
+## 🌐 VanNet — Built-in Network Layer
+
+**VanNet** is VanHooks' built-in network layer: live packet capture, offline
+pcap/pcapng read/write, BPF filtering, and full protocol parsing, compiled
+directly into `libvanhooks` alongside the hooking engine with no external
+runtime dependencies of its own.
+
+### Enable / disable
+
+```bash
+cmake -B build -DCMAKE_BUILD_TYPE=Release   # VH_ENABLE_NET=ON by default
+cmake -B build -DVH_ENABLE_NET=OFF          # hooking only, smaller binary
+```
+
+**System prerequisite:** `libpcap-dev` (Linux/macOS) or the
+[Npcap SDK](https://npcap.com/#download) (Windows) — provides the OS
+capture driver, not any userspace library.
+
+```bash
+# Debian/Ubuntu
+sudo apt install libpcap-dev
+
+# macOS
+brew install libpcap
+
+# Windows — install Npcap SDK and set NPCAP_SDK env var, then cmake
+```
+
+### Quick start
+
+```cpp
+#include <vh/vh.hpp>   // VanNet pulled in automatically
+
+// Hook a function
+auto hook = vh::hook(&target, &detour);
+
+// Capture packets from the same host
+auto cap = vh::net::Capture::open("eth0");
+if (cap) {
+    cap->filter("tcp port 443");
+    cap->start([](vh::net::Packet pkt) {
+        printf("captured %zu bytes\n", pkt.raw_len());
+
+        // Full layer-by-layer parse
+        if (auto parsed = pkt.parse()) {
+            auto* ip = parsed->getLayerOfType<vanhooks::net::IPv4Layer>();
+            if (ip)
+                printf("  src=%s\n", ip->getSrcIPAddress().to_string().c_str());
+        }
+    });
+}
+```
+
+### API reference
+
+| Type | Description |
+|---|---|
+| `vh::net::Capture` | RAII live capture. `open()` → `filter()` → `start(cb)` → `stop()` |
+| `vh::net::PcapReader` | Read `.pcap` / `.pcapng` files packet by packet |
+| `vh::net::PcapWriter` | Write raw or parsed packets to a `.pcap` file |
+| `vh::net::Filter` | BPF expression builder |
+| `vh::net::Packet` | Non-owning view returned in the callback; call `parse()` for full decode |
+| `vh::net::devices()` | List all live-capture-capable interfaces |
+
+All factory methods return `vh::Result<T>` (`std::expected<T, vh::Error>`),
+matching the rest of the VanHooks API exactly.
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
