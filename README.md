@@ -475,19 +475,6 @@ Precompiled `.lib` files are provided for Windows x86 and x64. ARM64 and POSIX t
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
-## 🛣️ Roadmap
-
-- [x] Trampoline, IAT, PLT, VTable, and mid-function hooks
-- [x] `std::expected`-based error handling
-- [x] Batch group operations with single-suspension flush
-- [x] VanNet packet capture and protocol parsing
-- [ ] ARM64 precompiled binaries (currently source-build only)
-- [ ] Linux/macOS precompiled binaries
-- [ ] Hot-reloadable hook configuration
-- [ ] Built-in symbol resolver for stripped binaries
-
-<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
-
 ## ❓ FAQ
 
 <details>
