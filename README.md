@@ -510,14 +510,6 @@ Behavior depends on hook type and installation order. Use <code>HookRegistry</co
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
-## 🤝 Contributing
-
-Pull requests are welcome. For major changes, open an issue first to discuss what you'd like to change.
-
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-FF3B3B?style=for-the-badge&labelColor=000000)](../../pulls)
-
-<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
-
 <div align="center">
 
 ## 📄 License
