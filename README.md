@@ -55,7 +55,7 @@ VanHooks is a production-grade, cross-platform function hooking library for C++2
 | CMake | 3.25+ (optional — drop-in use requires no build system) |
 | Windows target | Windows 10 1903 / Windows Server 2019 |
 
-> No runtime dependencies for the hooking engine. Zydis is compiled into the library. VanNet (optional) requires `libpcap-dev` / the Npcap SDK — see [VanNet](#-vannet--built-in-network-layer) below.
+> No runtime dependencies for the hooking engine. Zydis is compiled into the library.
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
