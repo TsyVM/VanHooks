@@ -20,7 +20,7 @@ One include. Everything in this document lives in the `vh::` namespace unless st
 
 ## Contents
 
-[Glossary](#glossary) · [Result Type](#result-type) · [Level 1 API](#level-1-api) · [Level 2 API](#level-2-api) · [Hook Object](#hook-object) · [Group](#group) · [HookRegistry](#hookregistry) · [Config Structs](#config-structs) · [Error Codes](#error-codes) · [Quick Reference](#quick-reference)
+[Glossary](#glossary) · [Result Type](#result-type) · [Level 1 API](#level-1-api) · [Level 2 API](#level-2-api) · [Hook Object](#hook-object) · [Group](#group) · [HookRegistry](#hookregistry) · [Config Structs](#config-structs) · [Error Codes](#error-codes) · [Network API](#network-api) · [Quick Reference](#quick-reference)
 
 ---
 
@@ -42,7 +42,7 @@ Seven terms used throughout this document.
 
 ## Result Type
 
-Every hook creation function returns `Result<Hook>`. `Result<T>` is an alias for `std::expected<T, vh::Error>` — no exceptions, no global error state, zero overhead on the success path.
+Every hook creation function returns `Result<Hook>`. `Result<T>` is an alias for `std::expected<T, vh::Error>` — no exceptions, no global error state, zero overhead on the success path. The network API (see [Network API](#network-api)) reuses the same `Result<T>` and a `Status` alias (`Result<void>`) for its own fallible operations.
 
 **Checking the result:**
 
@@ -750,6 +750,246 @@ All codes are values of `vh::Error` (`uint32_t` underlying type). Use `vh::error
 
 ---
 
+## Network API
+
+`vh::net` is VanHooks' packet-capture and protocol-parsing layer: live interface capture, offline `.pcap` / `.pcapng` read and write, BPF filtering, and full layer-by-layer protocol parsing (Ethernet up through application-layer text protocols). It's compiled directly into `libvanhooks` — no external runtime dependencies.
+
+```cpp
+#include <vh/vh.hpp>   // pulls <vh/net.hpp> in automatically
+```
+
+`<vh/net.hpp>` is only available when the library was configured with `-DVH_ENABLE_NET=ON` (default off). Including it without net support enabled is a compile error with a message pointing at that CMake option.
+
+Fallible operations reuse the same [Result Type](#result-type) as the hooking API: `Result<T>` for factories that return an object, `Status` (an alias for `Result<void>`) for operations that just succeed or fail.
+
+```cpp
+auto cap = vh::net::Capture::open("eth0");
+if (!cap) {
+    printf("open failed: %s\n", vh::error_to_string(cap.error()).data());
+    return;
+}
+
+cap->filter("tcp port 443");
+cap->start([](vh::net::Packet pkt) {
+    auto parsed = pkt.parse();
+    if (auto* ip = parsed->getLayerOfType<vanhooks::net::IPv4Layer>())
+        printf("%s -> %s\n",
+               ip->getSrcIPv4Address().toString().c_str(),
+               ip->getDstIPv4Address().toString().c_str());
+});
+```
+
+---
+
+### `vh::net::devices()`
+
+```cpp
+[[nodiscard]] std::vector<DeviceInfo> vh::net::devices();
+```
+
+Lists every interface capable of live capture on the current machine.
+
+**`DeviceInfo`:**
+
+```cpp
+struct DeviceInfo {
+    std::string name;        // e.g. "eth0", "en0", "\Device\NPF_{…}"
+    std::string description; // human-readable label (may be empty on Linux)
+    std::string ip4;         // primary IPv4 address as dotted-decimal, or ""
+    bool        loopback = false;
+};
+```
+
+```cpp
+for (const auto& d : vh::net::devices())
+    printf("%-20s %s%s\n", d.name.c_str(), d.ip4.c_str(),
+           d.loopback ? " (loopback)" : "");
+```
+
+---
+
+### `vh::net::Filter`
+
+```cpp
+class Filter {
+public:
+    Filter() = default;
+    explicit Filter(std::string_view bpf);
+
+    Filter& expr(std::string_view e);
+    [[nodiscard]] std::string_view expr() const noexcept;
+};
+```
+
+A small builder around a BPF (Berkeley Packet Filter) expression string. Mainly useful when a filter is assembled programmatically; for a literal expression, pass the string straight to `Capture::filter()` or `PcapReader::filter()` instead of constructing a `Filter`.
+
+```cpp
+vh::net::Filter f;
+f.expr("udp port 53");
+
+cap->filter(f);
+```
+
+---
+
+### `vh::net::Capture`
+
+RAII wrapper around a live-interface capture session. Move-only; the destructor stops the capture if still running.
+
+```cpp
+auto cap = vh::net::Capture::open("eth0");
+cap->filter("udp port 53");
+cap->start([](vh::net::Packet p) { … });
+cap->stop();   // or let it destruct
+```
+
+**Factory:**
+
+| Method | Signature | Description |
+|---|---|---|
+| `open` | `static Result<Capture> open(std::string_view device_name)` | Opens a device by name, e.g. `"eth0"`, `"en0"`, or a Windows NPF device path. |
+| `open_by_ip` | `static Result<Capture> open_by_ip(std::string_view ipv4)` | Opens the device that owns the given IPv4 address. |
+
+**Configuration** (call before `start()`):
+
+| Method | Signature | Description |
+|---|---|---|
+| `filter` | `Capture& filter(std::string_view bpf_expr)` | Sets a BPF filter expression, e.g. `"tcp port 443"`. |
+| `filter` | `Capture& filter(const Filter& f)` | Overload taking a `Filter` builder. |
+| `snap_len` | `Capture& snap_len(int bytes) noexcept` | Maximum bytes captured per packet. Default `65535`. |
+| `promiscuous` | `Capture& promiscuous(bool on) noexcept` | Enables or disables promiscuous mode. Default `true`. |
+
+All configuration setters return `*this` and can be chained.
+
+**Lifecycle:**
+
+| Method | Signature | Description |
+|---|---|---|
+| `start` | `Status start(PacketCallback cb)` | Begins capture on a background thread; `cb` is invoked once per packet. `using PacketCallback = std::function<void(Packet)>;` |
+| `stop` | `void stop()` | Stops capture. Safe to call even if not running. |
+| `running` | `bool running() const noexcept` | Whether capture is currently active. |
+
+**Stats:**
+
+```cpp
+struct Stats {
+    uint32_t received   = 0;
+    uint32_t dropped    = 0;
+    uint32_t if_dropped = 0;
+};
+[[nodiscard]] std::optional<Stats> stats() const;
+```
+
+Returns `std::nullopt` if the underlying device doesn't expose statistics.
+
+**Escape hatch:**
+
+| Method | Signature | Description |
+|---|---|---|
+| `device` | `vanhooks::net::PcapLiveDevice* device() const noexcept` | Access to the underlying device object for functionality not wrapped by `Capture`. |
+
+> ⚠️ The `Packet` passed to `PacketCallback` is a non-owning view — valid only for the duration of that invocation. Copy `raw_data()` (see [`Packet`](#vhnetpacket) below) if you need to keep the bytes past the callback.
+
+---
+
+### `vh::net::PcapReader`
+
+Offline `.pcap` / `.pcapng` file reader. Move-only; the destructor closes the file.
+
+```cpp
+auto r = vh::net::PcapReader::open("dump.pcap");
+while (auto pkt = r->next()) { … }
+```
+
+| Method | Signature | Description |
+|---|---|---|
+| `open` | `static Result<PcapReader> open(std::string_view path)` | Opens a capture file. Format (`.pcap` vs `.pcapng`) is auto-detected. |
+| `next` | `std::optional<vanhooks::net::RawPacket> next()` | Reads the next packet, or `std::nullopt` at end of file. |
+| `filter` | `PcapReader& filter(std::string_view bpf_expr)` | Restricts subsequent `next()` calls to packets matching the BPF expression. |
+| `packets_read` | `uint64_t packets_read() const noexcept` | Running count of packets returned by `next()` so far. |
+
+---
+
+### `vh::net::PcapWriter`
+
+Writes raw or parsed packets to a `.pcap` file. Move-only; the destructor closes the file.
+
+```cpp
+auto w = vh::net::PcapWriter::open("out.pcap");
+w->write(pkt);
+```
+
+| Method | Signature | Description |
+|---|---|---|
+| `open` | `static Result<PcapWriter> open(std::string_view path)` | Creates (or truncates) a `.pcap` file for writing. |
+| `write` | `Status write(const vanhooks::net::RawPacket& pkt)` | Writes a raw packet. |
+| `write` | `Status write(const vanhooks::net::Packet& pkt)` | Writes a parsed packet (its current layers, serialized). |
+| `close` | `void close()` | Flushes and closes the file early. Called automatically by the destructor. |
+| `packets_written` | `uint64_t packets_written() const noexcept` | Running count of packets written so far. |
+
+---
+
+### `vh::net::Packet`
+
+A non-owning view over one raw captured packet, as delivered to a `Capture::PacketCallback`. Valid only for the duration of that callback invocation.
+
+| Method | Return Type | Description |
+|---|---|---|
+| `raw_data()` | `const uint8_t*` | Pointer to the raw packet bytes. Copy out if you need to retain them. |
+| `raw_len()` | `std::size_t` | Length of the raw packet in bytes. |
+| `parse()` | `std::unique_ptr<vanhooks::net::Packet>` | Parses the raw bytes into a full protocol-layer stack (see below). |
+| `raw()` | `vanhooks::net::RawPacket*` | Escape hatch to the underlying raw-packet object. |
+
+```cpp
+cap->start([](vh::net::Packet p) {
+    auto parsed = p.parse();
+    for (auto* l = parsed->getFirstLayer(); l; l = l->getNextLayer())
+        printf("layer: protocol %d\n", static_cast<int>(l->getProtocol()));
+});
+```
+
+---
+
+### Parsed packets and layers
+
+`Packet::parse()` returns a `vanhooks::net::Packet` — a linked list of `Layer` objects, ordered from lowest (Ethernet) to highest. For a typical HTTP request the chain looks like `EthLayer → IPv4Layer → TcpLayer → HttpRequestLayer`.
+
+| Method | Return Type | Description |
+|---|---|---|
+| `getFirstLayer()` | `Layer*` | The lowest layer in the packet (usually Ethernet). |
+| `getLastLayer()` | `Layer*` | The highest (innermost / most application-specific) layer. |
+| `getLayerOfType<TLayer>()` | `TLayer*` | First layer matching a specific type, or `nullptr` if none. |
+| `getNextLayerOfType<TLayer>(start)` | `TLayer*` | First matching layer at or after `start`. |
+| `getPrevLayerOfType<TLayer>(start)` | `TLayer*` | First matching layer at or before `start`, searching backward. |
+
+Every `Layer` also exposes `getNextLayer()`, `getPrevLayer()`, `getProtocol()`, `getData()`, and `getDataLen()`.
+
+```cpp
+auto parsed = pkt.parse();
+
+if (auto* tcp = parsed->getLayerOfType<vanhooks::net::TcpLayer>()) {
+    printf("port %u -> %u\n", tcp->getSrcPort(), tcp->getDstPort());
+}
+```
+
+**Commonly used layer classes** (all in `vanhooks::net::`, headers `vanhooks/net/L2Layers.h`, `L3Layers.h`, `L4Layers.h`):
+
+| Class | OSI layer | Header | Key accessors |
+|---|---|---|---|
+| `EthLayer` | L2 | `L2Layers.h` | `getSourceMac()`, `getDestMac()`, `getEthHeader()` |
+| `VlanLayer` | L2 | `L2Layers.h` | 802.1Q tagging fields |
+| `ArpLayer` | L2 | `L2Layers.h` | `getArpHeader()` |
+| `IPv4Layer` | L3 | `L3Layers.h` | `getSrcIPv4Address()`, `getDstIPv4Address()`, `getIPv4Header()` |
+| `IPv6Layer` | L3 | `L3Layers.h` | `getSrcIPAddress()`, `getDstIPAddress()` |
+| `IcmpLayer` | L3 | `L3Layers.h` | `getIcmpHeader()` |
+| `VxlanLayer` | L3 (tunnel) | `L3Layers.h` | VXLAN VNI and inner-frame access |
+| `TcpLayer` | L4 | `L4Layers.h` | `getSrcPort()`, `getDstPort()`, `getTcpHeader()`, TCP options via `TcpOption` |
+| `UdpLayer` | L4 | `L4Layers.h` | `getSrcPort()`, `getDstPort()`, `getUdpHeader()` |
+
+All layer, address (`MacAddress`, `IPv4Address`, `IPv6Address`, `IPAddress`), and device (`PcapLiveDevice`, `PcapLiveDeviceList`) types are declared in the `vanhooks::net` namespace (distinct from `vh::net`, which is the thin RAII/`Result`-based wrapper documented above) and are reached through the escape hatches on `Capture`, `Packet`, `PcapReader`, and `PcapWriter`.
+
+---
+
 ## Quick Reference
 
 ```cpp
@@ -807,6 +1047,40 @@ vh::HookRegistry::global().remove_all();
 
 ```cpp
 if (!r) printf("%s\n", vh::error_to_string(r.error()).data());
+```
+
+**Network — devices & filters**
+
+```cpp
+vh::net::devices()                       // std::vector<DeviceInfo>
+vh::net::Filter{}.expr("tcp port 443")
+```
+
+**Network — capture**
+
+```cpp
+auto cap = vh::net::Capture::open("eth0");        // or open_by_ip("10.0.0.5")
+cap->filter("udp port 53").snap_len(65535).promiscuous(true);
+cap->start([](vh::net::Packet p) { ... });
+cap->stop();       cap->running();       cap->stats();
+```
+
+**Network — pcap / pcapng files**
+
+```cpp
+auto r = vh::net::PcapReader::open("in.pcap");
+while (auto pkt = r->next()) { ... }
+
+auto w = vh::net::PcapWriter::open("out.pcap");
+w->write(pkt);
+```
+
+**Network — parsing**
+
+```cpp
+auto parsed = pkt.parse();
+parsed->getFirstLayer();   parsed->getLastLayer();
+parsed->getLayerOfType<vanhooks::net::TcpLayer>();
 ```
 
 ---
