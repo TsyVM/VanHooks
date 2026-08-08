@@ -515,13 +515,6 @@ Behavior depends on hook type and installation order. Use <code>HookRegistry</co
 ## 📄 License
 
 **MIT** — see [LICENSE](LICENSE)
-
-### ⭐ Star History
-
-<a href="https://star-history.com/#yourname/vanhooks&Date">
-  <img src="https://api.star-history.com/svg?repos=yourname/vanhooks&type=Date&theme=dark" width="60%"/>
-</a>
-
 <img width="100%" src="https://capsule-render.vercel.app/api?type=waving&color=0:000000,50:8B0000,100:000000&height=120&section=footer"/>
 
 </div>
