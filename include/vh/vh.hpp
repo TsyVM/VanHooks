@@ -9,6 +9,7 @@
  *   Level 2 — vh::inline_hook / api_hook / vtable_hook / iat_hook / plt_hook / mid_hook
  *   Level 3 — vh::group("Name")  →  Group;  vh::HookRegistry::global()
  *
+ * #include <vh/vh.hpp>  is the only include end users need.
  */
 
 #include "fwd.hpp"
@@ -18,6 +19,11 @@
 #include "hook.hpp"
 #include "group.hpp"
 #include "advanced.hpp"
+
+// ── Optional network layer ───────────────────────────────────────────────────
+#ifdef VH_NET_ENABLED
+#  include "net.hpp"
+#endif
 
 #include <vanhooks/vanhooks.hpp>
 
