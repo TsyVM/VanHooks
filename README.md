@@ -1,6 +1,8 @@
 <div align="center">
 
-<img width="100%" src="https://capsule-render.vercel.app/api?type=waving&color=0:000000,50:8B0000,100:000000&height=220&section=header&text=VanHooks&fontSize=70&fontColor=FF3B3B&animation=fadeIn&fontAlignY=35&desc=Modern%20C%2B%2B23%20Cross-Platform%20Function%20Hooking%20Library&descAlignY=55&descSize=18&descColor=CCCCCC"/>
+<img src="vh-logo.png" width="600" alt="VanHooks"/>
+
+<p><em>Modern C++23 Cross-Platform Function Hooking Library</em></p>
 
 <a href="#">
 <img src="https://readme-typing-svg.demolab.com/?lines=Trampoline+%C2%B7+IAT+%C2%B7+PLT+%C2%B7+VTable+%C2%B7+Mid-Function;One+API.+Every+Platform.+Zero+Exceptions.;std%3A%3Aexpected+all+the+way+down.&font=Fira%20Code&center=true&width=650&height=45&color=FF3B3B&vCenter=true&size=22&pause=1800"/>
