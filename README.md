@@ -18,10 +18,10 @@
 
 <br/>
 
-[![Stars](https://img.shields.io/github/stars/yourname/vanhooks?style=for-the-badge&color=FF3B3B&labelColor=000000)](../../stargazers)
-[![Issues](https://img.shields.io/github/issues/yourname/vanhooks?style=for-the-badge&color=FF3B3B&labelColor=000000)](../../issues)
-[![Last Commit](https://img.shields.io/github/last-commit/yourname/vanhooks?style=for-the-badge&color=FF3B3B&labelColor=000000)](../../commits)
-[![Downloads](https://img.shields.io/github/downloads/yourname/vanhooks/total?style=for-the-badge&color=FF3B3B&labelColor=000000)](../../releases)
+[![Stars](https://img.shields.io/github/stars/tsyvm/vanhooks?style=for-the-badge&color=FF3B3B&labelColor=000000)](../../stargazers)
+[![Issues](https://img.shields.io/github/issues/tsyvm/vanhooks?style=for-the-badge&color=FF3B3B&labelColor=000000)](../../issues)
+[![Last Commit](https://img.shields.io/github/last-commit/tsyvm/vanhooks?style=for-the-badge&color=FF3B3B&labelColor=000000)](../../commits)
+[![Downloads](https://img.shields.io/github/downloads/tsyvm/vanhooks/total?style=for-the-badge&color=FF3B3B&labelColor=000000)](../../releases)
 
 </div>
 
