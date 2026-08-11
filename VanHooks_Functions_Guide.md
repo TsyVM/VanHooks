@@ -20,7 +20,7 @@ One include. Everything in this document lives in the `vh::` namespace unless st
 
 ## Contents
 
-[Glossary](#glossary) · [Result Type](#result-type) · [Level 1 API](#level-1-api) · [Level 2 API](#level-2-api) · [Hook Object](#hook-object) · [Group](#group) · [HookRegistry](#hookregistry) · [Config Structs](#config-structs) · [Error Codes](#error-codes) · [Network API](#network-api) · [Quick Reference](#quick-reference)
+[Glossary](#glossary) · [Result Type](#result-type) · [Level 1 API](#level-1-api) · [Level 2 API](#level-2-api) · [Hook Object](#hook-object) · [Group](#group) · [HookRegistry](#hookregistry) · [Config Structs](#config-structs) · [Error Codes](#error-codes) · [Pattern Scanner](#pattern-scanner) · [Anti-Debug Detection](#anti-debug-detection) · [Disassembler](#disassembler) · [Process Injection](#process-injection) · [Symbol Resolution](#symbol-resolution) · [PE Introspection](#pe-introspection) · [Breakpoints](#breakpoints) · [Call Stack Capture](#call-stack-capture) · [Network API](#network-api) · [Quick Reference](#quick-reference)
 
 ---
 
@@ -678,6 +678,54 @@ struct Mid {
 
 ---
 
+### `config::Inject`
+
+Used by `vh::inject`, `vh::inject_from_memory`.
+
+```cpp
+struct Inject {
+    InjectMethod method = InjectMethod::LoadLibrary;
+    std::string  tag;
+};
+```
+
+| Field | Default | Description |
+|---|---|---|
+| `method` | `LoadLibrary` | Injection method. See [Process Injection](#process-injection) for trade-offs. |
+| `tag` | `""` | Optional label stored with the injection handle. |
+
+---
+
+### `Engine::Config`
+
+Passed to `vanhooks::Engine` at construction to configure global engine behaviour. End users can construct a custom engine with stealth options enabled; the global engine uses defaults (all stealth off, no watchdog).
+
+```cpp
+vanhooks::Engine::Config cfg;
+cfg.enable_integrity_watchdog = true;
+cfg.watchdog_interval_ms      = 250;
+cfg.suppress_etw              = true;
+cfg.suppress_amsi             = true;
+
+vanhooks::Engine eng(cfg);
+```
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `allocator` | `shared_ptr<IAllocator>` | `nullptr` | Custom trampoline memory allocator. `nullptr` uses the default (near-target allocation). |
+| `trampoline_pool_size` | `size_t` | `65536` | Bytes per trampoline pool slab. Increase if `TrampolineNoSpace` errors appear. |
+| `auto_flush_icache` | `bool` | `true` | Flush the instruction cache after each patch. Disable only if you are managing cache coherency manually. |
+| `enable_integrity_watchdog` | `bool` | `false` | Start the integrity watchdog thread. See [Watchdog](#watchdog) notes below. |
+| `watchdog_interval_ms` | `uint32_t` | `500` | How often the watchdog polls hook integrity, in milliseconds. |
+| `suppress_etw` | `bool` | `false` | Patch `ntdll!EtwEventWrite` and `EtwEventWriteFull` to return `STATUS_SUCCESS` immediately, silencing user-mode ETW telemetry. No-op on HVCI/VBS systems. **Windows only.** |
+| `suppress_amsi` | `bool` | `false` | Patch `amsi.dll!AmsiScanBuffer` and `AmsiScanString` to return `AMSI_RESULT_CLEAN`. No-op if `amsi.dll` is not loaded. **Windows only.** |
+
+#### Watchdog
+
+When `enable_integrity_watchdog` is `true`, a background thread polls every installed hook at `watchdog_interval_ms` and reinstalls any that have been removed by a kernel driver or external process. The watchdog is spawned via `NtCreateThreadEx` so `CreateThread` does not appear in the IAT. It stops cleanly when the `Engine` is destroyed. RAII destructors and explicit `remove()` calls still work normally — the watchdog only reacts to *external* removal.
+
+---
+
 ## Error Codes
 
 All codes are values of `vh::Error` (`uint32_t` underlying type). Use `vh::error_to_string(e)` for the human-readable name.
@@ -747,6 +795,1068 @@ All codes are values of `vh::Error` (`uint32_t` underlying type). Use `vh::error
 | `QueueEmpty` | `Group::apply()` called with nothing queued. |
 | `ChainBaseNotFound` | The base hook passed to `chain()` is not known to the engine — likely already removed. |
 | `ChainOrderViolation` | A chain link was removed before its base hook. Always remove in reverse creation order. |
+
+### PE introspection
+
+| Code | Meaning |
+|---|---|
+| `PeInvalidHeader` | DOS or NT signature mismatch, or offsets are corrupt. |
+| `PeNoExportDirectory` | The module has no export directory (e.g. a data-only DLL). |
+| `PeNoImportDirectory` | The module has no import directory. |
+| `PeItemNotFound` | A named export, import, or section could not be found. |
+
+### Breakpoints
+
+| Code | Meaning |
+|---|---|
+| `BreakpointAlreadySet` | A breakpoint is already installed at this address. |
+| `BreakpointNotFound` | No breakpoint exists at the given address. |
+| `BreakpointSlotExhausted` | All four hardware debug registers (DR0–DR3) are occupied. Remove one before adding another. |
+| `BreakpointInstallFailed` | The OS call to set or clear the thread context failed. |
+
+### Call-stack capture
+
+| Code | Meaning |
+|---|---|
+| `CallstackCaptureFailed` | `RtlCaptureStackBackTrace` / `backtrace` returned 0 frames. May occur in deeply optimised builds with no frame pointers. |
+
+---
+
+## Pattern Scanner
+
+Scans memory for byte patterns using IDA-style wildcard syntax, accelerated with Boyer–Moore–Horspool. All functions are in `vanhooks::scanner::` and are available without any optional CMake flag.
+
+```cpp
+#include <vh/vh.hpp>  // scanner is always available
+using namespace vanhooks::scanner;
+```
+
+---
+
+### `scan_pattern` — range scan
+
+```cpp
+Result<std::vector<uintptr_t>> scan_pattern(
+    const void*      base,
+    size_t           size,
+    std::string_view ida_pattern);
+```
+
+Scans `[base, base+size)` for all occurrences of `ida_pattern`. Returns a vector of matching virtual addresses (absolute, not offsets). `?` or `??` is a wildcard that matches any byte.
+
+```cpp
+auto hits = vanhooks::scanner::scan_pattern(
+    module_base, module_size,
+    "48 8B 05 ? ? ? ? 48 85 C0 74");
+
+for (auto addr : hits.value_or({}))
+    printf("match @ 0x%llx\n", addr);
+```
+
+---
+
+### `scan_bytes` — exact byte scan
+
+```cpp
+std::vector<uintptr_t> scan_bytes(
+    const void*              base,
+    size_t                   size,
+    std::span<const uint8_t> needle);
+```
+
+Finds all occurrences of `needle` in `[base, base+size)`. No wildcards. Never fails — returns an empty vector if there are no matches.
+
+```cpp
+std::vector<uint8_t> sig = { 0x48, 0x8B, 0x05, 0xDE, 0xAD };
+auto hits = vanhooks::scanner::scan_bytes(base, size, sig);
+```
+
+---
+
+### `scan_process` — process-wide scan (Windows)
+
+```cpp
+Result<std::vector<uintptr_t>> scan_process(std::string_view ida_pattern);
+```
+
+Walks every committed, accessible memory region in the process (`VirtualQuery`) and returns all matches. Useful when you don't know which module contains a pattern.
+
+```cpp
+auto hits = vanhooks::scanner::scan_process("E8 ? ? ? ? 85 C0 74 ?");
+```
+
+---
+
+### `scan_module` — named module scan (Windows)
+
+```cpp
+Result<std::vector<uintptr_t>> scan_module(
+    std::string_view module_name,
+    std::string_view ida_pattern);
+```
+
+Resolves `module_name` via `GetModuleHandle`, then scans its entire image range.
+
+```cpp
+auto hits = vanhooks::scanner::scan_module("game.exe", "48 89 5C 24 ? 57 48 83 EC ?");
+```
+
+---
+
+### `parse_pattern`
+
+```cpp
+Result<Pattern> parse_pattern(std::string_view input);
+```
+
+Compiles an IDA-style pattern string into a reusable `Pattern`. Use this when you scan the same pattern many times; avoids re-parsing on every call.
+
+```cpp
+auto pat = vanhooks::scanner::parse_pattern("48 8B 05 ? ? ? ?").value();
+
+// Reuse across multiple ranges
+for (auto& region : regions)
+    auto hits = vanhooks::scanner::scan_pattern(region.base, region.size, pat);
+```
+
+**`Pattern` members:**
+
+| Member | Type | Description |
+|---|---|---|
+| `bytes` | `vector<PatternByte>` | Compiled pattern bytes. Each has a `value` and a `wildcard` flag. |
+| `raw` | `string` | Original input string, for diagnostics. |
+| `size()` | `size_t` | Pattern length in bytes. |
+| `empty()` | `bool` | True if the pattern has no bytes. |
+
+---
+
+## Anti-Debug Detection
+
+`vanhooks::antidebug::check_all()` runs eight independent techniques and returns a structured `Report`. Available on all platforms without any optional CMake flag; technique coverage varies by OS.
+
+```cpp
+#include <vh/vh.hpp>   // antidebug is always included
+```
+
+---
+
+### `check_all`
+
+```cpp
+vanhooks::antidebug::Report check_all();
+```
+
+Runs all available detection techniques and aggregates results into a `Report`. Safe to call at any time; techniques are independent and non-destructive.
+
+```cpp
+auto report = vanhooks::antidebug::check_all();
+
+if (report.any_detected()) {
+    printf("%d technique(s) triggered\n", report.detection_count());
+}
+
+for (auto& f : report.findings) {
+    printf("[%s] %-45s %s\n",
+        f.detected ? "DETECTED" : "clean   ",
+        f.technique.c_str(),
+        f.detail.c_str());
+}
+```
+
+---
+
+### `Report`
+
+```cpp
+struct Report {
+    std::vector<Finding> findings;
+
+    bool any_detected()    const noexcept;
+    int  detection_count() const noexcept;
+};
+```
+
+| Method | Description |
+|---|---|
+| `any_detected()` | Returns `true` if any technique detected a debugger indicator. |
+| `detection_count()` | Returns the number of techniques that fired. |
+
+---
+
+### `Finding`
+
+```cpp
+struct Finding {
+    std::string technique;  // human-readable technique name
+    bool        detected;   // true = indicator found
+    std::string detail;     // extra context (e.g. flag values, process name)
+};
+```
+
+---
+
+### Techniques
+
+#### Windows — full suite (8 techniques)
+
+| Technique name | Method | What it checks |
+|---|---|---|
+| `IsDebuggerPresent` | Win32 API | `PEB.BeingDebugged` flag |
+| `CheckRemoteDebuggerPresent` | Win32 API | Cross-process debugger handle |
+| `NtQueryInformationProcess(DebugPort)` | ntdll direct | `ProcessDebugPort` is non-null |
+| `HeapFlags` | PEB walk | Heap `Flags` / `ForceFlags` differ from clean-process defaults (x86 and x64 offsets handled separately) |
+| `NtGlobalFlag` | PEB walk | Bits `0x70` set in `PEB.NtGlobalFlag` |
+| `CloseHandle(invalid)` | Exception test | `EXCEPTION_INVALID_HANDLE` is raised only under a debugger |
+| `TimingCheck` | `QueryPerformanceCounter` | 1 000-iteration loop takes >50 ms — consistent with debugger stepping overhead |
+| `DebuggerProcessList` | `CreateToolhelp32Snapshot` | Known debugger process names running (x64dbg, OllyDbg, IDA, Cheat Engine, Wireshark, Fiddler, etc.) |
+
+#### Linux — stub (1 technique)
+
+| Technique name | Method | What it checks |
+|---|---|---|
+| `ptrace(TRACEME)` | `ptrace(2)` | Returns `-1` / `EPERM` if the process is already being traced |
+
+#### Individual checks (Windows only)
+
+Each technique is also available as a standalone function if you want to run a subset:
+
+```cpp
+vanhooks::antidebug::Finding f = vanhooks::antidebug::check_is_debugger_present();
+vanhooks::antidebug::Finding f = vanhooks::antidebug::check_remote_debugger();
+vanhooks::antidebug::Finding f = vanhooks::antidebug::check_debug_port();
+vanhooks::antidebug::Finding f = vanhooks::antidebug::check_heap_flags();
+vanhooks::antidebug::Finding f = vanhooks::antidebug::check_nt_global_flag();
+vanhooks::antidebug::Finding f = vanhooks::antidebug::check_close_handle_exception();
+vanhooks::antidebug::Finding f = vanhooks::antidebug::check_timing();
+vanhooks::antidebug::Finding f = vanhooks::antidebug::check_debugger_processes();
+```
+
+---
+
+## Disassembler
+
+Zydis-backed instruction decoder and length disassembler. Available always — no optional CMake flag required. Types live in `vh::disasm::`.
+
+```cpp
+#include <vh/disasm.hpp>  // or just <vh/vh.hpp>
+```
+
+---
+
+### `Arch`
+
+```cpp
+enum class Arch : uint8_t { X86, X64, ARM64, Unknown };
+
+Arch vh::disasm::detect_arch() noexcept;
+```
+
+Auto-detects the architecture of the running process. Pass an explicit `Arch` to `Disassembler` to override (e.g. to decode a foreign binary's bytes).
+
+---
+
+### `Instruction`
+
+```cpp
+struct Instruction {
+    uint64_t    address;         // virtual address where this instruction lives
+    uint8_t     length;          // byte size (1–15 on x86/x64, always 4 on ARM64)
+    InsnKind    kind;            // classification (see below)
+    uint8_t     bytes[16];       // raw bytes
+
+    std::optional<uint64_t> absolute_target;  // resolved target for RIP/PC-relative insns
+    std::string             mnemonic;          // human-readable (debug / logging)
+
+    bool is_branch()   const noexcept;  // Call, Jump, JumpConditional
+    bool is_terminal() const noexcept;  // Jump, Return
+    bool is_relative() const noexcept;  // RipRelative, PcRelative
+};
+```
+
+**`InsnKind` values:**
+
+| Value | Description |
+|---|---|
+| `Generic` | Any instruction not matched below |
+| `Call` | Direct or indirect call |
+| `Jump` | Unconditional jump |
+| `JumpConditional` | Conditional jump (Jcc) |
+| `Return` | Function return |
+| `Nop` | No-op |
+| `RipRelative` | x64 instruction that references memory via RIP |
+| `PcRelative` | ARM64 instruction that references memory via PC |
+| `Privileged` | Privileged or trap instruction (`syscall`, `int3`, `hlt`, etc.) |
+
+---
+
+### `Disassembler`
+
+```cpp
+class vh::disasm::Disassembler {
+public:
+    explicit Disassembler(Arch arch = detect_arch());
+
+    Result<Instruction> decode_one(
+        std::span<const uint8_t> code,
+        uint64_t                 runtime_address) const;
+
+    Result<std::vector<Instruction>> decode_min_bytes(
+        std::span<const uint8_t> code,
+        uint64_t                 runtime_address,
+        size_t                   min_bytes) const;
+
+    static size_t total_length(const std::vector<Instruction>& insns) noexcept;
+
+    Arch arch() const noexcept;
+};
+```
+
+| Method | Description |
+|---|---|
+| `decode_one(code, addr)` | Decode one instruction. `runtime_address` is used for RIP-relative resolution — pass the VA where `code` actually lives. |
+| `decode_min_bytes(code, addr, n)` | Decode as many complete instructions as needed to cover at least `n` bytes. Used by the trampoline builder for prologue stealing. |
+| `total_length(insns)` | Sum of `length` across all instructions in a decoded sequence. |
+
+```cpp
+vh::disasm::Disassembler dis;
+
+auto span = std::span<const uint8_t>(
+    reinterpret_cast<const uint8_t*>(fn_ptr), 64);
+
+auto insn = dis.decode_one(span, reinterpret_cast<uint64_t>(fn_ptr));
+if (insn)
+    printf("%s  (%u bytes)\n", insn->mnemonic.c_str(), insn->length);
+```
+
+---
+
+### Free functions
+
+#### `decode_until_branch`
+
+```cpp
+std::vector<Instruction> vh::disasm::decode_until_branch(
+    const void* code_ptr,
+    size_t      count_bytes,
+    uint64_t    runtime_address = 0,
+    Arch        arch = detect_arch());
+```
+
+Decodes instructions from `code_ptr` up to `count_bytes`, stopping at the first terminal (unconditional jump or return) instruction. Returns all decoded instructions including the terminal. Never fails — returns an empty vector on decode error.
+
+```cpp
+auto insns = vh::disasm::decode_until_branch(fn_ptr, 128);
+printf("%s\n", vh::disasm::format_listing(insns).c_str());
+```
+
+---
+
+#### `decode_prologue`
+
+```cpp
+Result<std::vector<Instruction>> vh::disasm::decode_prologue(
+    const void* code_ptr,
+    size_t      min_bytes,
+    uint64_t    runtime_address = 0,
+    Arch        arch = detect_arch());
+```
+
+Decodes at least `min_bytes` of prologue instructions without splitting an instruction boundary. The minimal safe trampoline copy length for hand-built trampolines.
+
+---
+
+#### `safe_copy_length`
+
+```cpp
+Result<size_t> vh::disasm::safe_copy_length(
+    const void* code_ptr,
+    size_t      min_bytes,
+    uint64_t    runtime_address = 0,
+    Arch        arch = detect_arch());
+```
+
+Returns the byte count at the next instruction boundary at or after `min_bytes`. Never splits an instruction. Used internally by `hook_mid` to locate the safe patch site.
+
+---
+
+#### `rewrite`
+
+```cpp
+Result<RewriteResult> vh::disasm::rewrite(
+    const std::vector<Instruction>& insns,
+    uint64_t original_base,
+    uint64_t new_base,
+    Arch     arch = detect_arch());
+```
+
+Rewrites `insns` so that all RIP/PC-relative references remain valid after the bytes are placed at `new_base` instead of `original_base`. Returns a `RewriteResult`:
+
+```cpp
+struct RewriteResult {
+    std::vector<uint8_t> code;      // patched bytes ready to write
+    bool                 clean;     // true if every instruction was relocatable
+    std::vector<size_t>  patched;   // indices of instructions that needed rewriting
+};
+```
+
+If `clean` is `false`, one or more instructions had a relative reference that could not be fixed up (e.g. an ARM64 `B` to an address outside ±128 MB of `new_base`).
+
+---
+
+#### `format_insn` / `format_listing`
+
+```cpp
+std::string vh::disasm::format_insn(const Instruction& insn);
+std::string vh::disasm::format_listing(const std::vector<Instruction>& insns);
+```
+
+Format one instruction or a sequence as a human-readable string.
+
+`format_insn` output: `0x00007ff812345678: 48 89 5c 24 08   mov qword ptr [rsp+0x8], rbx`
+
+`format_listing` returns one `format_insn` line per instruction, joined by newlines.
+
+---
+
+## Process Injection
+
+Injects a DLL (by path or in-memory PE bytes) into a remote process using one of four methods. Requires `VH_INJECT_ENABLED`. **Windows only** — all functions return `Error::Unsupported` on other platforms.
+
+```cpp
+#include <vh/inject.hpp>  // or just <vh/vh.hpp> with VH_INJECT_ENABLED
+```
+
+---
+
+### `vh::inject`
+
+```cpp
+Result<Injection> vh::inject(uint32_t         pid,
+                              std::string_view dll_path,
+                              config::Inject   opts = {});
+```
+
+Injects `dll_path` into process `pid` using the method specified in `opts`. Returns a move-only RAII `Injection` that ejects automatically when it goes out of scope.
+
+| | |
+|---|---|
+| `pid` | Target process ID. |
+| `dll_path` | Fully-qualified DLL path, accessible from the target process's file system context. |
+| `opts` | Method and optional tag. See [`config::Inject`](#configinject). |
+
+```cpp
+auto inj = vh::inject(target_pid, "C:\\payloads\\research.dll",
+                      { .method = vh::InjectMethod::ManualMap,
+                        .tag    = "research" });
+if (!inj)
+    printf("failed: %s\n", vh::error_to_string(inj.error()).data());
+```
+
+---
+
+### `vh::inject_from_memory`
+
+```cpp
+Result<Injection> vh::inject_from_memory(uint32_t                 pid,
+                                          std::span<const uint8_t> pe_bytes,
+                                          config::Inject           opts = {});
+```
+
+Injects a PE image from a memory buffer — no file on disk required. For `ManualMap`, the image is mapped directly from `pe_bytes`. For other methods, it is written to a temp file and deleted immediately after injection.
+
+```cpp
+std::vector<uint8_t> pe = load_pe_from_resource();
+auto inj = vh::inject_from_memory(target_pid, pe,
+                                   { .method = vh::InjectMethod::ManualMap });
+```
+
+---
+
+### `vh::eject`
+
+```cpp
+Result<void> vh::eject(Injection& inj);
+```
+
+Convenience free function equivalent to `inj.eject()`. Provided for API symmetry.
+
+---
+
+### `vh::Injection`
+
+RAII handle returned by `inject` / `inject_from_memory`. Move-only; destructor calls eject automatically.
+
+| Method | Return Type | Description |
+|---|---|---|
+| `eject()` | `Result<void>` | Explicitly unload and invalidate. Idempotent — safe to call multiple times. |
+| `valid()` | `bool` | Handle is live. |
+| `operator bool()` | `bool` | Equivalent to `valid()`. |
+| `pid()` | `uint32_t` | Target process ID. |
+| `method()` | `InjectMethod` | Which method was used. |
+| `tag()` | `std::string` | Tag from `config::Inject`. |
+| `handle()` | `InjHandle` | Escape hatch to the internal handle. |
+
+---
+
+### `vh::InjectMethod`
+
+```cpp
+enum class InjectMethod : uint8_t {
+    LoadLibrary,  // CreateRemoteThread + LoadLibraryA
+    ManualMap,    // Manual PE mapping — no module-list entry
+    ThreadHijack, // Context-redirect an existing thread — no remote thread
+    ApcQueue,     // Queue APC to alertable threads — timing non-deterministic
+};
+```
+
+| Method | Module-list entry | Remote thread | Stealth |
+|---|:---:|:---:|:---:|
+| `LoadLibrary` | ✓ (visible) | ✓ | Low |
+| `ManualMap` | ✗ | ✓ (shellcode) | Medium |
+| `ThreadHijack` | Configurable | ✗ | High |
+| `ApcQueue` | Configurable | ✗ | High |
+
+**LoadLibrary** — `CreateRemoteThread` + `LoadLibraryA`. Simple and compatible, but leaves a module-list entry and is trivially detectable by any `EnumProcessModules` scan.
+
+**ManualMap** — Parses the PE in-process, maps sections into the target without calling `LoadLibraryA`. No module-list entry. The PE header is withheld from the remote allocation; shellcode is zeroed after execution; no IAT trampolines are left behind.
+
+**ThreadHijack** — Suspends an existing thread, redirects its `RIP` to a compact shellcode stub that loads the payload, restores all volatile registers and the original IP via a RIP-relative jump, then resumes. No remote thread created; `CreateThread` does not appear in any trace for this operation.
+
+**ApcQueue** — Queues a `LoadLibraryA` APC to every alertable thread. Loads the next time any thread enters an alertable wait (`SleepEx`, `WaitForSingleObjectEx`, etc.). No remote thread; no visible injection event until the APC fires.
+
+---
+
+## Symbol Resolution
+
+Resolves virtual addresses to demangled function names, module names, source file paths, and line numbers. Requires `VH_SYMBOLS_ENABLED`. Backend is DbgHelp on Windows and `dladdr` / libbacktrace on POSIX.
+
+```cpp
+#include <vh/symbols.hpp>  // or <vh/vh.hpp> with VH_SYMBOLS_ENABLED
+```
+
+---
+
+### `vh::symbols::resolve`
+
+```cpp
+Result<Symbol> vh::symbols::resolve(uintptr_t address);
+
+template<typename Fn>
+Result<Symbol> vh::symbols::resolve(Fn* fn_ptr);
+```
+
+Resolves `address` to its nearest symbol. `Symbol::address` is the symbol's base — compute the offset as `address - sym.address`. The function-pointer overload avoids the `reinterpret_cast` at the call site.
+
+```cpp
+if (auto sym = vh::symbols::resolve(some_address)) {
+    printf("%s + 0x%zx  [%s]\n",
+           sym->name.c_str(),
+           some_address - sym->address,
+           sym->module.c_str());
+}
+```
+
+---
+
+### `vh::symbols::find`
+
+```cpp
+Result<uintptr_t> vh::symbols::find(std::string_view name,
+                                     std::string_view module = {});
+```
+
+Finds the VA of a named symbol. `module` narrows the search to one image; empty searches all loaded modules. Tries both demangled and raw names on Windows.
+
+```cpp
+auto addr = vh::symbols::find("NtQuerySystemInformation", "ntdll.dll");
+```
+
+---
+
+### `vh::symbols::source_location`
+
+```cpp
+Result<SourceLocation> vh::symbols::source_location(uintptr_t address);
+```
+
+Returns the source file path and line number for `address`. Requires PDB (Windows) or DWARF sections (Linux / macOS with libbacktrace).
+
+```cpp
+struct SourceLocation {
+    std::string file;
+    uint32_t    line   = 0;
+    uint32_t    column = 0;
+};
+```
+
+---
+
+### `vh::symbols::load_module`
+
+```cpp
+Result<void> vh::symbols::load_module(std::string_view module_path);
+```
+
+Pre-warms the symbol table for `module_path`. Symbols are normally loaded lazily on first `resolve` — call this explicitly before entering a hot path or before spawning worker threads.
+
+---
+
+### `vh::symbols::initialize`
+
+```cpp
+Result<void> vh::symbols::initialize();
+```
+
+Initialises the debug-info backend. Idempotent — safe to call multiple times. Called automatically by all other functions; call it early if you want to control when the initialisation cost is incurred.
+
+---
+
+### Stack helpers
+
+```cpp
+// Capture raw return addresses into a caller-supplied buffer
+int vh::symbols::capture_stack(void** frames, int count, int skip = 1) noexcept;
+
+// Format a list of raw addresses into human-readable lines
+std::vector<std::string> vh::symbols::format_stack(std::span<void* const> frames);
+
+// Convenience: capture and format in one call
+std::vector<std::string> vh::symbols::current_stack(int depth = 32, int skip = 2);
+
+// Demangle a C++ symbol name
+std::string vh::symbols::demangle(std::string_view mangled);
+```
+
+Each formatted line has the form: `#N  0xADDRESS  symbol_name + 0xOFFSET  [module.dll]`
+
+```cpp
+for (auto& line : vh::symbols::current_stack())
+    puts(line.c_str());
+```
+
+`demangle` uses `UnDecorateSymbolName` (DbgHelp) on Windows and `__cxa_demangle` (cxxabi.h) on GCC/Clang. Falls back to the input string unchanged if demangling fails.
+
+---
+
+### `Symbol`
+
+```cpp
+struct Symbol {
+    std::string name;       // demangled symbol name (best effort)
+    std::string raw_name;   // raw / mangled name as stored in debug info
+    uintptr_t   address;    // base VA of the symbol
+    size_t      size;       // function size in bytes (0 = unknown)
+    std::string module;     // owning module base name (e.g. "ntdll.dll")
+    std::string file;       // source file path (empty if unavailable)
+    uint32_t    line;       // source line (0 if unavailable)
+};
+```
+
+---
+
+## PE Introspection
+
+Zero-copy in-process PE reader. Requires `VH_PE_ENABLED`. **Full support on Windows (PE32 / PE32+, x86 / x64).** Returns `Error::Unsupported` on Linux and macOS.
+
+```cpp
+#include <vh/pe.hpp>  // or <vh/vh.hpp> with VH_PE_ENABLED
+```
+
+---
+
+### Factories
+
+#### `vh::pe::open`
+
+```cpp
+Result<PeView> vh::pe::open(std::string_view name = {});
+```
+
+Opens a module already loaded in the current process by name. Accepts a base name (`"ntdll.dll"`, `"ntdll"`), a full path, or an empty string to open the main executable.
+
+```cpp
+auto pe = vh::pe::open("ntdll.dll");
+```
+
+---
+
+#### `vh::pe::open_at`
+
+```cpp
+Result<PeView> vh::pe::open_at(uintptr_t        base,
+                                size_t           image_size = 0,
+                                std::string_view name       = {});
+```
+
+Opens a PE image at a known base address. `image_size` is derived from PE headers if zero.
+
+---
+
+#### `vh::pe::open_handle` (Windows)
+
+```cpp
+Result<PeView> vh::pe::open_handle(HMODULE hmod);
+```
+
+Opens a module by its `HMODULE`.
+
+---
+
+#### `vh::pe::modules` (Windows)
+
+```cpp
+Result<std::vector<PeView>> vh::pe::modules();
+```
+
+Enumerates all modules currently loaded in the process, in load order.
+
+---
+
+### `PeView` — query methods
+
+All query methods return `Result<T>` except `find_caves`, which always returns an empty vector on error.
+
+#### Sections
+
+```cpp
+Result<std::vector<Section>> pv.sections();
+Result<Section>              pv.find_section(std::string_view name);
+```
+
+**`Section`:**
+
+```cpp
+struct Section {
+    std::string name;               // e.g. ".text", ".rdata"
+    uintptr_t   virtual_address;    // RVA from image base
+    size_t      virtual_size;
+    uint32_t    characteristics;
+
+    bool executable()       const noexcept;  // IMAGE_SCN_MEM_EXECUTE
+    bool readable()         const noexcept;  // IMAGE_SCN_MEM_READ
+    bool writable()         const noexcept;  // IMAGE_SCN_MEM_WRITE
+    bool contains_code()    const noexcept;  // IMAGE_SCN_CNT_CODE
+};
+```
+
+---
+
+#### Exports
+
+```cpp
+Result<std::vector<Export>> pv.exports();
+Result<Export>              pv.find_export(std::string_view name);
+Result<Export>              pv.find_export_by_ordinal(uint16_t ordinal);
+```
+
+**`Export`:**
+
+```cpp
+struct Export {
+    std::string name;        // empty for ordinal-only exports
+    uint16_t    ordinal;
+    uintptr_t   address;     // absolute VA of the exported symbol
+
+    std::string forwarder;   // e.g. "NTDLL.RtlAllocateHeap" (non-empty = forwarder)
+
+    bool is_forwarder() const noexcept;
+    bool by_name()      const noexcept;
+};
+```
+
+```cpp
+auto exp = pe->find_export("NtQuerySystemInformation");
+if (exp)
+    printf("found @ 0x%llx\n", (unsigned long long)exp->address);
+```
+
+---
+
+#### Imports
+
+```cpp
+Result<std::vector<Import>>  pv.imports();
+Result<std::vector<Import>>  pv.imports_from(std::string_view module_name);
+Result<Import>               pv.find_import(std::string_view module_name,
+                                             std::string_view symbol_name);
+```
+
+**`Import`:**
+
+```cpp
+struct Import {
+    std::string module_name;    // e.g. "KERNEL32.DLL"
+    std::string name;           // empty for ordinal imports
+    uint16_t    ordinal;        // valid only when name is empty
+    uintptr_t   iat_address;    // VA of the IAT slot (pointer-to-pointer)
+
+    bool by_ordinal() const noexcept;
+
+    // Dereference the IAT slot to get the current resolved address
+    uintptr_t resolved() const noexcept;
+};
+```
+
+```cpp
+auto imp = pe->find_import("kernel32.dll", "VirtualProtect");
+if (imp) {
+    auto* slot = reinterpret_cast<void**>(imp->iat_address);
+    printf("VirtualProtect IAT slot → %p\n", *slot);
+}
+```
+
+---
+
+#### Code caves
+
+```cpp
+std::vector<CodeCave> pv.find_caves(size_t min_size = 16,
+                                     bool   executable_only = false);
+```
+
+Finds runs of zero-padding bytes within sections that are large enough to hold a short stub. `executable_only` restricts results to sections marked executable.
+
+**`CodeCave`:**
+
+```cpp
+struct CodeCave {
+    uintptr_t   address;       // VA of the first zero byte
+    size_t      size;          // length of the run
+    std::string section_name;  // section containing this cave
+};
+```
+
+```cpp
+for (auto& cave : pe->find_caves(32, true))
+    printf("[%s] 0x%llx  %zu bytes\n",
+           cave.section_name.c_str(), (unsigned long long)cave.address, cave.size);
+```
+
+---
+
+#### Accessors
+
+| Method | Return Type | Description |
+|---|---|---|
+| `base()` | `uintptr_t` | Image load base address. |
+| `image_size()` | `size_t` | Total mapped image size. |
+| `name()` | `string_view` | Display name (module base name or path). |
+| `valid()` | `bool` | View is open and has a valid PE header. |
+
+---
+
+## Breakpoints
+
+Software (INT3 / VEH) and hardware (DR0–DR3 via `SetThreadContext`) breakpoints with RAII lifetime. Requires `VH_BREAKPOINT_ENABLED`.
+
+```cpp
+#include <vh/breakpoint.hpp>  // or <vh/vh.hpp> with VH_BREAKPOINT_ENABLED
+```
+
+---
+
+### `vh::breakpoint::set_software`
+
+```cpp
+Result<Breakpoint> vh::breakpoint::set_software(uintptr_t address, Callback cb);
+```
+
+Installs a software breakpoint at `address`. On Windows, patches one byte to `0xCC` and installs a VEH handler. On Linux, installs a `SIGTRAP` handler via `sigaction`. The original byte is restored before `cb` is called and re-patched afterwards if `cb` returns `Action::Continue`.
+
+| | |
+|---|---|
+| `address` | Target virtual address. Must point to executable memory. |
+| `cb` | Called on each hit. Must match `Callback = std::function<Action(uintptr_t)>`. |
+
+```cpp
+auto bp = vh::breakpoint::set_software(target_address,
+    [](uintptr_t addr) {
+        printf("SW BP hit @ 0x%llx\n", addr);
+        return vh::breakpoint::Action::Continue;
+    });
+```
+
+---
+
+### `vh::breakpoint::set_hardware`
+
+```cpp
+Result<Breakpoint> vh::breakpoint::set_hardware(uintptr_t   address,
+                                                  HwCondition condition,
+                                                  HwSize      size,
+                                                  Callback    cb);
+```
+
+Installs a hardware breakpoint using DR0–DR3 on all currently-running threads. x86-64 only; returns `Error::Unsupported` on ARM64 and x86-32. Returns `Error::BreakpointSlotExhausted` if all four slots are occupied.
+
+```cpp
+auto hw = vh::breakpoint::set_hardware(
+    watch_address,
+    vh::breakpoint::HwCondition::Write,
+    vh::breakpoint::HwSize::Dword,
+    [](uintptr_t addr) {
+        printf("write detected @ 0x%llx\n", addr);
+        return vh::breakpoint::Action::Continue;
+    });
+```
+
+---
+
+### `Action`
+
+```cpp
+enum class Action : uint8_t {
+    Continue,  // resume execution (software BP is re-armed automatically)
+    Remove,    // remove this breakpoint and resume — one-shot behaviour
+};
+```
+
+---
+
+### `HwCondition`
+
+```cpp
+enum class HwCondition : uint8_t {
+    Execute  = 0,   // break on instruction fetch (size must be Byte)
+    Write    = 1,   // break on memory write
+    ReadWrite = 3,  // break on read or write (not execute)
+};
+```
+
+---
+
+### `HwSize`
+
+```cpp
+enum class HwSize : uint8_t {
+    Byte  = 0,  // 1-byte range
+    Word  = 1,  // 2-byte range
+    Qword = 2,  // 8-byte range (x64 only)
+    Dword = 3,  // 4-byte range
+};
+```
+
+`Execute` condition requires `Byte` size. All other combinations of condition and size are valid.
+
+---
+
+### `Breakpoint` — RAII guard
+
+| Method | Return Type | Description |
+|---|---|---|
+| `remove()` | `void` | Remove the breakpoint early. Idempotent. The destructor also calls this. |
+| `active()` | `bool` | True if the breakpoint is still installed. |
+| `address()` | `uintptr_t` | The address this breakpoint watches. |
+| `apply_to_new_thread(HANDLE)` | `Status` | **(Windows, hardware BPs only)** Apply the debug register settings to a newly-created thread. |
+
+The destructor calls `remove()` automatically:
+
+```cpp
+{
+    auto bp = vh::breakpoint::set_software(addr, cb).value();
+    // breakpoint active
+} // removed here
+```
+
+---
+
+### New-thread propagation (Windows, hardware breakpoints)
+
+Hardware breakpoints are applied per-thread at install time. Threads created *after* the install call are not automatically covered. Handle this from `DLL_THREAD_ATTACH`:
+
+```cpp
+// Store the Breakpoint at file or class scope:
+vh::breakpoint::Breakpoint g_hw_bp = /* ... */;
+
+BOOL WINAPI DllMain(HINSTANCE, DWORD reason, LPVOID) {
+    if (reason == DLL_THREAD_ATTACH && g_hw_bp.active())
+        g_hw_bp.apply_to_new_thread(GetCurrentThread());
+    return TRUE;
+}
+```
+
+---
+
+## Call Stack Capture
+
+Thin wrapper around `RtlCaptureStackBackTrace` (Windows) / `backtrace()` (POSIX). Requires `VH_CALLSTACK_ENABLED`.
+
+```cpp
+#include <vh/callstack.hpp>  // or <vh/vh.hpp> with VH_CALLSTACK_ENABLED
+```
+
+---
+
+### `vh::callstack::capture`
+
+```cpp
+Result<std::vector<uintptr_t>> vh::callstack::capture(
+    size_t skip      = 1,
+    size_t max_depth = kMaxDepth);
+```
+
+Captures the raw return-address stack of the current thread. `skip = 1` omits `capture()` itself; `skip = 2` inside a detour omits both `capture()` and the VanHooks dispatch frame. `kMaxDepth` is 64. Frames are ordered innermost first.
+
+No heap allocation occurs on the Windows capture path (fixed stack buffer, then move into the returned vector).
+
+```cpp
+auto frames = vh::callstack::capture(/*skip=*/2, /*max_depth=*/32);
+for (auto addr : frames.value_or({}))
+    printf("  0x%016llx\n", addr);
+```
+
+---
+
+### `vh::callstack::capture_annotated`
+
+```cpp
+// Available only when VH_SYMBOLS_ENABLED is also defined
+Result<std::vector<Frame>> vh::callstack::capture_annotated(
+    size_t skip      = 1,
+    size_t max_depth = kMaxDepth);
+```
+
+Captures the stack and resolves each frame through the symbols layer. Frames that cannot be resolved still appear in the output; their `name`, `file`, and `line` fields are empty / zero.
+
+```cpp
+struct Frame {
+    uintptr_t   address;
+    std::string name;    // demangled symbol name
+    std::string file;    // source file
+    uint32_t    line;    // source line (0 if unavailable)
+};
+```
+
+---
+
+### `vh::callstack::format`
+
+```cpp
+// Available only when VH_SYMBOLS_ENABLED is also defined
+std::string vh::callstack::format(const std::vector<Frame>& frames);
+```
+
+Formats an annotated stack as a multi-line human-readable string.
+
+```
+#0  0x00007ffe12345678  MyFunc    src/game.cpp:42
+#1  0x00007ffe12344000  Dispatch  src/engine.cpp:17
+```
+
+---
+
+### Usage inside a hook
+
+```cpp
+int WINAPI hk_MessageBoxW(HWND h, LPCWSTR t, LPCWSTR c, UINT f) {
+    // skip=2: skip capture() + this detour frame
+    auto frames = vh::callstack::capture(2, 16);
+    for (auto addr : frames.value_or({}))
+        printf("  called from 0x%llx\n", addr);
+
+    return orig_MessageBoxW(h, t, c, f);
+}
+```
 
 ---
 
@@ -1047,6 +2157,93 @@ vh::HookRegistry::global().remove_all();
 
 ```cpp
 if (!r) printf("%s\n", vh::error_to_string(r.error()).data());
+```
+
+**Pattern scanner**
+
+```cpp
+// Range scan
+vanhooks::scanner::scan_pattern(base, size, "48 8B 05 ? ? ? ?");
+// Process-wide (Windows)
+vanhooks::scanner::scan_process("E8 ? ? ? ? 85 C0");
+// Named module (Windows)
+vanhooks::scanner::scan_module("game.exe", "48 89 5C 24 ?");
+// Exact bytes (no wildcards)
+vanhooks::scanner::scan_bytes(base, size, needle_span);
+// Pre-compiled pattern for reuse
+auto pat = vanhooks::scanner::parse_pattern("48 8B 05 ? ? ? ?").value();
+```
+
+**Anti-debug**
+
+```cpp
+auto report = vanhooks::antidebug::check_all();
+report.any_detected();       // bool
+report.detection_count();    // int
+report.findings;             // vector<Finding> — each has .technique, .detected, .detail
+```
+
+**Disassembler**
+
+```cpp
+vh::disasm::Disassembler dis;
+dis.decode_one(code_span, runtime_va);
+dis.decode_min_bytes(code_span, runtime_va, min_bytes);
+vh::disasm::decode_until_branch(fn_ptr, 128);
+vh::disasm::decode_prologue(fn_ptr, 5);
+vh::disasm::safe_copy_length(fn_ptr, 5);
+vh::disasm::rewrite(insns, original_va, new_va);
+vh::disasm::format_insn(insn);
+vh::disasm::format_listing(insns);
+```
+
+**Process injection (Windows, VH_INJECT_ENABLED)**
+
+```cpp
+vh::inject(pid, "payload.dll", { .method = vh::InjectMethod::ManualMap });
+vh::inject_from_memory(pid, pe_bytes, { .method = vh::InjectMethod::ThreadHijack });
+inj.eject();    inj.valid();    inj.method();    inj.pid();
+```
+
+**Symbol resolution (VH_SYMBOLS_ENABLED)**
+
+```cpp
+vh::symbols::resolve(address);           // → Result<Symbol>
+vh::symbols::find("CreateFileW", "ntdll");
+vh::symbols::source_location(address);   // → Result<SourceLocation>
+vh::symbols::load_module("path/to.pdb");
+vh::symbols::current_stack();            // → vector<string> (formatted)
+vh::symbols::demangle(raw_name);
+```
+
+**PE introspection (Windows, VH_PE_ENABLED)**
+
+```cpp
+auto pe = vh::pe::open("ntdll.dll");
+pe->sections();                          // Result<vector<Section>>
+pe->find_export("NtQuerySystemInformation");
+pe->find_import("kernel32.dll", "VirtualProtect");
+pe->find_caves(/*min_size=*/32, /*exec_only=*/true);
+vh::pe::modules();                       // all loaded modules
+```
+
+**Breakpoints (VH_BREAKPOINT_ENABLED)**
+
+```cpp
+// Software (INT3 / VEH / SIGTRAP)
+vh::breakpoint::set_software(addr, [](uintptr_t a) { return Action::Continue; });
+// Hardware (DR0–DR3, x86-64 only)
+vh::breakpoint::set_hardware(addr, HwCondition::Write, HwSize::Dword, cb);
+bp.remove();    bp.active();    bp.address();
+bp.apply_to_new_thread(hthread);   // Windows, hardware only
+```
+
+**Call stack (VH_CALLSTACK_ENABLED)**
+
+```cpp
+vh::callstack::capture(/*skip=*/2, /*max=*/32);    // Result<vector<uintptr_t>>
+vh::callstack::capture_annotated();                // Result<vector<Frame>> (needs VH_SYMBOLS_ENABLED)
+vh::callstack::format(frames);                     // string
 ```
 
 **Network — devices & filters**
