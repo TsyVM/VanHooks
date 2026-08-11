@@ -1136,5 +1136,4 @@ auto w = vh::net::PcapWriter::open("out.pcap");
 <div align="center">
 <img width="100%" src="https://capsule-render.vercel.app/api?type=waving&color=0:0A0A0A,50:7A0C0C,100:0A0A0A&height=90&section=footer"/>
 </div>
-ENDOFFILE
 echo "Functions guide written"
