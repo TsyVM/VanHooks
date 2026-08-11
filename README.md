@@ -2,10 +2,10 @@
 
 <img src="vh-logo.png" width="600" alt="VanHooks"/>
 
-<p><em>Modern C++23 Cross-Platform Function Hooking Library</em></p>
+<p><em>Modern C++23 Cross-Platform Function Hooking & Instrumentation Library</em></p>
 
 <a href="#">
-<img src="https://readme-typing-svg.demolab.com/?lines=Trampoline+%C2%B7+IAT+%C2%B7+PLT+%C2%B7+VTable+%C2%B7+Mid-Function;Pattern+Scanner+%C2%B7+Injection+%C2%B7+Symbols+%C2%B7+Breakpoints;One+API.+Every+Platform.+Zero+Exceptions.;std%3A%3Aexpected+all+the+way+down.&font=Fira%20Code&center=true&width=650&height=45&color=FF3B3B&vCenter=true&size=22&pause=1800"/>
+<img src="https://readme-typing-svg.demolab.com/?lines=Trampoline+%C2%B7+IAT+%C2%B7+PLT+%C2%B7+VTable+%C2%B7+Mid-Function;Pattern+Scanner+%C2%B7+Injection+%C2%B7+Symbols+%C2%B7+Breakpoints;Watchdog+%C2%B7+Anti-Debug+%C2%B7+ETW+%C2%B7+AMSI;One+API.+Every+Platform.+Zero+Exceptions.;std%3A%3Aexpected+all+the+way+down.&font=Fira%20Code&center=true&width=650&height=45&color=FF3B3B&vCenter=true&size=22&pause=1800"/>
 </a>
 
 <br/>
@@ -27,13 +27,15 @@
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
-VanHooks is a production-grade, cross-platform function hooking and instrumentation library for C++23. It provides inline trampoline hooks, import table hooks, procedure linkage table hooks, virtual function table hooks, and mid-function register-context hooks — all through a single unified API backed by `std::expected` error handling and RAII lifetime management. Beyond hooking, the library ships a complete instrumentation toolkit: a pattern scanner, disassembler, process injector, PE introspection layer, software and hardware breakpoints, call stack capture, and anti-debug detection — all enabled by default with **zero external dependencies beyond Zydis**. An optional symbol resolution layer and an optional network layer (**VanNet**, for live packet capture and protocol parsing) can be enabled when needed. Every feature uses the same `Result<T>` error model and the same `#include <vh/vh.hpp>` entry point.
+VanHooks is a production-grade, cross-platform function hooking and instrumentation library for C++23. It provides inline trampoline hooks, import table hooks, procedure linkage table hooks, virtual function table hooks, and mid-function register-context hooks — all through a single unified API backed by `std::expected` error handling and RAII lifetime management.
+
+Beyond hooking, the library ships a complete instrumentation and stealth toolkit: a pattern scanner, disassembler, PE introspector (sections, exports, imports, code cave finder), software and hardware breakpoints, call stack capture, multi-technique anti-debug detection, four-method process injector, an integrity watchdog, and user-mode ETW/AMSI suppression — all enabled by default with **zero external dependencies beyond Zydis**. An optional symbol resolution layer and an optional network layer (**VanNet**, for live packet capture and protocol parsing) can be enabled when needed. Every feature uses the same `Result<T>` error model and the same `#include <vh/vh.hpp>` entry point.
 
 <div align="center">
 
 ### 📑 Table of Contents
 
-[Why VanHooks](#-why-vanhooks) · [Features](#-features-at-a-glance) · [Requirements](#️-requirements) · [Installation](#-installation) · [Quick Start](#-quick-start) · [Hook Types](#-hook-types) · [Lifetime & RAII](#️-hook-lifetime-and-raii) · [Groups](#️-groups--batch-lifecycle-management) · [Chaining](#-hook-chaining) · [Error Handling](#-error-handling) · [HookRegistry](#-multi-module-projects--hookregistry) · [Scanner](#-pattern-scanner) · [Anti-Debug](#-anti-debug-detection) · [Disassembler](#-disassembler) · [Injection](#-process-injection) · [Symbols](#-symbol-resolution) · [PE Introspection](#-pe-introspection) · [Breakpoints](#-breakpoints) · [Call Stack](#-call-stack-capture) · [VanNet](#-vannet--built-in-network-layer) · [Optional Modules](#️-optional-modules) · [Platform Support](#️-platform-support) · [FAQ](#-faq) · [Docs](#-documentation)
+[Why VanHooks](#-why-vanhooks) · [Features](#-features-at-a-glance) · [Requirements](#️-requirements) · [Installation](#-installation) · [Quick Start](#-quick-start) · [Hook Types](#-hook-types) · [Lifetime & RAII](#️-hook-lifetime-and-raii) · [Groups](#️-groups--batch-lifecycle-management) · [Chaining](#-hook-chaining) · [Error Handling](#-error-handling) · [HookRegistry](#-multi-module-projects--hookregistry) · [Scanner](#-pattern-scanner) · [Anti-Debug](#-anti-debug-detection) · [Disassembler](#-disassembler) · [Injection](#-process-injection) · [Stealth](#-stealth-configuration) · [Watchdog](#-integrity-watchdog) · [Symbols](#-symbol-resolution) · [PE Introspection](#-pe-introspection) · [Breakpoints](#-breakpoints) · [Call Stack](#-call-stack-capture) · [VanNet](#-vannet--built-in-network-layer) · [Optional Modules](#️-optional-modules) · [Platform Support](#️-platform-support) · [FAQ](#-faq) · [Docs](#-documentation)
 
 </div>
 
@@ -55,886 +57,698 @@ VanHooks is a production-grade, cross-platform function hooking and instrumentat
 | **Batch group operations** | ✗ | ✗ | ✗ | ✗ | 🔴 **✓** |
 | **Hook chaining** | ✗ | ✓ | ✗ | ✓ | 🔴 **✓** |
 | **Mid-function hooks** | ✗ | ✗ | ✓ | ✗ | 🔴 **✓** |
+| **Integrity watchdog** | ✗ | ✗ | ✗ | ✗ | 🔴 **✓** |
+| **ETW / AMSI suppression** | ✗ | ✗ | ✗ | ✗ | 🔴 **✓** |
+| **Multi-method injection** | ✗ | ✗ | ✗ | ✗ | 🔴 **✓ (4 methods)** |
+| **Anti-debug detection** | ✗ | ✗ | ✗ | ✗ | 🔴 **✓ (8 techniques)** |
+| **SW + HW breakpoints** | ✗ | ✗ | ✗ | ✗ | 🔴 **✓ (RAII)** |
+| **PE introspection** | ✗ | ✗ | ✗ | ✗ | 🔴 **✓** |
 | **Built-in packet capture** | ✗ | ✗ | ✗ | ✗ | 🔴 **✓ (VanNet)** |
 | **Pattern scanner** | ✗ | ✗ | ✗ | ✗ | 🔴 **✓ (IDA-style + BMH)** |
-| **Anti-debug detection** | ✗ | ✗ | ✗ | ✗ | 🔴 **✓ (8 techniques)** |
-| **Disassembler API** | ✗ | ✗ | internal | ✗ | 🔴 **✓ (Zydis, public)** |
-| **Process injection** | ✗ | ✗ | ✗ | ✗ | 🔴 **✓ (4 methods)** |
-| **Symbol resolution** | ✗ | ✗ | ✗ | ✗ | 🔴 **✓ (DbgHelp / dladdr)** |
-| **PE introspection** | ✗ | ✗ | ✗ | ✗ | 🔴 **✓** |
-| **Breakpoints (SW + HW)** | ✗ | ✗ | ✗ | ✗ | 🔴 **✓ (INT3 / DR0-DR3)** |
-| **Call stack capture** | ✗ | ✗ | ✗ | ✗ | 🔴 **✓** |
 
 </div>
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
-## ⚡ Features at a Glance
+## ✨ Features at a Glance
 
-<div align="center">
-
-| 🪝 | 🧵 | 🧩 | 📦 |
-|:---:|:---:|:---:|:---:|
-| **5 Hook Types** | **Zero Exceptions** | **RAII Everywhere** | **Single Header** |
-| Trampoline · IAT · PLT · VTable · Mid-function | `std::expected` end to end | Hooks, injections, and breakpoints clean up on scope exit | `#include <vh/vh.hpp>` and go |
-| 🌐 | 🖥️ | ⚙️ | 🔗 |
-| **VanNet Built-in** | **True Cross-Platform** | **C++23 Native** | **Chainable Hooks** |
-| Live capture + full protocol parsing | Windows · Linux · macOS · ARM64 | Concepts, `expected`, modern idioms | Stack detours without losing the original |
-| 🔍 | 💉 | 🐛 | 🏛️ |
-| **Pattern Scanner** | **Process Injection** | **Breakpoints** | **PE Introspection** |
-| IDA-style wildcards · Boyer-Moore-Horspool | LoadLibrary · ManualMap · ThreadHijack · ApcQueue | Software (INT3/VEH) + Hardware (DR0–DR3) | Sections · Exports · Imports · Code caves |
-| 🔬 | 🔭 | 📡 | 📚 |
-| **Disassembler** | **Symbol Resolution** | **Anti-Debug Detection** | **Call Stack Capture** |
-| Zydis-backed · rewrite/relocation helpers | DbgHelp · dladdr · libbacktrace · demangling | 8 independent techniques · structured report | Raw + annotated · cross-platform |
-
-</div>
-
-<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
-
-## ⚙️ Requirements
-
-| Requirement | Minimum |
-|---|---|
-| C++ standard | C++23 |
-| MSVC | 19.38+ (Visual Studio 2022 17.8+) |
-| GCC | 13+ |
-| Clang | 17+ |
-| CMake | 3.25+ (optional — drop-in use requires no build system) |
-| Windows target | Windows 10 1903 / Windows Server 2019 |
-
-> **Zero external dependencies by default.** Zydis is the only third-party library and is compiled in via FetchContent. VanNet (`-DVH_ENABLE_NET=ON`) adds `wpcap`/`pcap`; symbol resolution (`-DVH_ENABLE_SYMBOLS=ON`) adds `dbghelp` on Windows or `dl` on POSIX. All other optional modules link only OS APIs already in the implicit link set.
+- **Five hook types** — Trampoline, IAT (`hook_iat` / `hook_iat_all`), PLT/GOT, VTable, Mid-function
+- **Three-level API** — beginner `vh::hook()`, fluent `vh::inline_hook()`, advanced `vh::Engine`
+- **Named groups & HookRegistry** — batch enable/disable/remove across DLL boundaries
+- **Batch queue** — `queue_enable` / `queue_disable` / `apply_queued` amortises thread-suspension overhead
+- **Hook chaining** — stack multiple detours on one target; each sees the previous one's trampoline
+- **Integrity watchdog** — background thread detects and reinstalls hooks removed by kernel drivers
+- **ETW suppression** — patches `EtwEventWrite` / `EtwEventWriteFull` to silence user-mode telemetry
+- **AMSI suppression** — patches `AmsiScanBuffer` / `AmsiScanString` to return clean without scanning
+- **Process injection** — four methods (LoadLibrary, ManualMap, ThreadHijack, ApcQueue) with RAII eject
+- **Anti-debug detection** — eight independent techniques with a structured per-technique report
+- **Software & hardware breakpoints** — RAII lifetime, DR0–DR3, VEH/sigaction, new-thread propagation
+- **PE introspection** — sections, exports (by name/ordinal), imports (by module), code cave finder
+- **Call stack capture** — raw VAs or annotated frames (with `VH_SYMBOLS_ENABLED`)
+- **Pattern scanner** — IDA-style wildcard patterns with Boyer–Moore–Horspool acceleration
+- **Disassembler** — Zydis-backed length disassembler and instruction decoder (always available)
+- **Symbol resolution** — DbgHelp (Windows) / libbacktrace (POSIX) behind `VH_SYMBOLS_ENABLED`
+- **VanNet** — PcapPlusPlus-derived packet capture and protocol parsing behind `VH_NET_ENABLED`
+- **Thread-safe by default** — all hook installs suspend threads; IP fixup handles prologue races on remove
+- **`std::expected` throughout** — no exceptions, no raw OS error codes, no hidden failure paths
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
-## 📥 Installation
+## 🛠️ Requirements
 
-### Option A — Drop-in (precompiled, no build system required)
+- **Compiler:** GCC 13+, Clang 17+, or MSVC 19.38+ with `/std:c++23`
+- **CMake:** 3.25+
+- **Zydis:** fetched automatically via CMake FetchContent
+- **Windows:** x86 / x64 (MinGW i686 cross-compilation supported)
+- **Linux:** x64 / ARM64
+- **macOS:** x64 / ARM64
 
-Copy `include/` into your project and link against the precompiled `.lib` for your target.
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
-**Library selection:**
+## 📦 Installation
 
-| Target | Configuration | Path |
-|---|---|---|
-| Windows x64 | Release | `lib/win-x64/Release/vanhooks.lib` |
-| Windows x86 | Release | `lib/win-x86/Release/vanhooks.lib` |
-
-All precompiled libs use a static CRT (`/MT` Release, `/MTd` Debug). No Visual C++ Redistributable is required. See [`lib/README.md`](lib/README.md) for MSVC project settings and ARM64 / Linux / macOS build-from-source instructions.
-
-<details>
-<summary><b>🔧 CMake (drop-in) — click to expand</b></summary>
+### CMake FetchContent
 
 ```cmake
-if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-    set(VH_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/lib/win-x64")
-else()
-    set(VH_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/lib/win-x86")
-endif()
-
-add_library(VanHooks::vanhooks STATIC IMPORTED)
-set_target_properties(VanHooks::vanhooks PROPERTIES
-    IMPORTED_LOCATION_RELEASE "${VH_LIB_DIR}/Release/vanhooks.lib"
-    IMPORTED_LOCATION_DEBUG   "${VH_LIB_DIR}/Debug/vanhooks.lib"
-    INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/include"
+include(FetchContent)
+FetchContent_Declare(vanhooks
+    GIT_REPOSITORY https://github.com/tsyvm/vanhooks.git
+    GIT_TAG        main
 )
-target_link_libraries(my_target PRIVATE VanHooks::vanhooks)
+FetchContent_MakeAvailable(vanhooks)
+
+target_link_libraries(my_target PRIVATE vanhooks)
 ```
 
-</details>
+Optional modules are controlled by CMake options:
 
-<details>
-<summary><b>🔧 MSVC project (manual) — click to expand</b></summary>
+```cmake
+# Enable optional layers (all off by default)
+set(VH_NET_ENABLED        ON)   # VanNet packet capture (requires Npcap/libpcap)
+set(VH_INJECT_ENABLED     ON)   # Process injection
+set(VH_SYMBOLS_ENABLED    ON)   # Symbol resolution (DbgHelp / libbacktrace)
+set(VH_PE_ENABLED         ON)   # PE introspection
+set(VH_BREAKPOINT_ENABLED ON)   # Software + hardware breakpoints
+set(VH_CALLSTACK_ENABLED  ON)   # Call stack capture
+```
 
-1. **Additional Include Directories** → add `include\`
-2. **Additional Library Directories** → add `lib\win-x64\Release\` (adjust for arch/config)
-3. **Additional Dependencies** → add `vanhooks.lib`
-4. **Runtime Library** → `Multi-threaded (/MT)` for Release, `Multi-threaded Debug (/MTd)` for Debug
+### Single include
 
-</details>
+```cpp
+#include <vh/vh.hpp>  // everything you need
+```
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
-## 🩸 Quick Start
-
-One include is all you need:
+## ⚡ Quick Start
 
 ```cpp
 #include <vh/vh.hpp>
-```
 
-Everything lives in the `vh::` namespace.
+// Original function signature
+static int (WINAPI* orig_MessageBoxA)(HWND, LPCSTR, LPCSTR, UINT) = nullptr;
 
-### Intercept a function (no call-through needed)
-
-```cpp
-int my_detour(int a, int b) {
-    printf("intercepted!\n");
-    return a + b;
+int WINAPI hk_MessageBoxA(HWND hwnd, LPCSTR text, LPCSTR caption, UINT type) {
+    caption = "VanHooks";
+    return orig_MessageBoxA(hwnd, text, caption, type);
 }
 
-auto r = vh::hook(&target_fn, &my_detour);
-if (!r) {
-    printf("failed: %s\n", vh::error_to_string(r.error()).data());
+void setup() {
+    // Level 1 — simplest path
+    auto hook = vh::hook(&MessageBoxA, &hk_MessageBoxA, &orig_MessageBoxA);
+    if (!hook) {
+        // hook.error() is a vanhooks::Error enum value
+    }
+    // hook goes out of scope → MessageBoxA automatically restored
 }
-// Hook is live. r->valid() == true.
-// Hook removes itself when r goes out of scope.
-```
-
-### Intercept a function and call the original
-
-```cpp
-static int (*orig_fn)(int, int) = nullptr;
-
-int my_detour(int a, int b) {
-    printf("add(%d, %d)\n", a, b);
-    return orig_fn(a, b);   // call through to real function
-}
-
-auto r = vh::hook(&target_fn, &my_detour, &orig_fn);
-```
-
-### Hook a system function by name
-
-```cpp
-static decltype(&MessageBoxW) orig_mbw = nullptr;
-
-BOOL WINAPI hk_mbw(HWND h, LPCWSTR text, LPCWSTR cap, UINT type) {
-    return orig_mbw(h, L"[Intercepted]", cap, type);
-}
-
-auto r = vh::hook("user32", "MessageBoxW", &hk_mbw, &orig_mbw);
 ```
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
-## 🪝 Hook Types
+## 🎣 Hook Types
 
-VanHooks provides five hook types, all returning the same `Result<Hook>` type.
+VanHooks exposes five distinct hook mechanisms, all returning `Result<Hook>` or `Result<HookHandle>`.
 
-<details open>
-<summary><b>Inline (trampoline) hook</b></summary>
+### Trampoline (Inline)
 
-Patches the first bytes of the target function with a jump. Works on any function whose prologue is large enough — 5 bytes on x86/x64, 16 bytes on ARM64.
-
-```cpp
-auto r = vh::inline_hook(&target, &detour, &orig, { .tag = "Module.Function" });
-```
-
-</details>
-
-<details>
-<summary><b>IAT hook — Windows</b></summary>
-
-Patches an Import Address Table entry. Intercepts calls from a specific module without modifying the target function itself. Useful for short functions that cannot be safely inline-hooked.
+Patches the target function's prologue with a jump to your detour. The original instructions are relocated into a trampoline stub, allowing you to call through to the original.
 
 ```cpp
-// Patch the IAT entry in a specific module
-auto r = vh::iat_hook("MessageBoxW", (void*)&hk_mbw,
-                      { .module_name = "my_app.exe", .tag = "IAT.MessageBoxW" });
-
-// Patch every loaded module's IAT entry at once
-auto hooks = vh::iat_hook_all("malloc", (void*)&hk_malloc);
+auto h = vh::inline_hook(&target_fn, &my_detour, &orig_fn);
 ```
 
-</details>
+On **x86** a 5-byte rel32 JMP is always used. On **x64** a 14-byte `FF 25` indirect is used when the target is outside ±2 GB (no register clobber). On **ARM64** a 4-byte `B` (±128 MB) or a 20-byte `MOVZ/MOVK/BR` sequence.
 
-<details>
-<summary><b>PLT hook — Linux / macOS</b></summary>
+### API Hook (by name)
 
-Patches the Procedure Linkage Table (Linux) or lazy pointer (macOS) used by the dynamic linker. The POSIX equivalent of an IAT hook.
+Resolves a symbol at runtime via `GetProcAddress` / `dlsym`, then installs a trampoline. Equivalent to MinHook's `MH_CreateHookApiEx`.
 
 ```cpp
-auto r = vh::plt_hook("libc", "malloc", (void*)&hk_malloc, { .tag = "libc.malloc" });
+auto h = vh::hook("user32.dll", "MessageBoxA", &hk_MessageBoxA, &orig_MessageBoxA);
 ```
 
-</details>
+### IAT Hook
 
-<details>
-<summary><b>VTable hook</b></summary>
-
-Patches a single slot in a C++ virtual function table.
+Patches the Import Address Table slot in a specific module (or every module that imports it).
 
 ```cpp
-// Hook IDXGISwapChain::Present (slot 8)
-void** vtbl = *reinterpret_cast<void***>(swap_chain_ptr);
+// Single module
+auto h = vh::iat_hook("my.dll", "kernel32.dll", "VirtualAlloc", &hk_VAlloc);
 
-static HRESULT (STDMETHODCALLTYPE *orig_Present)(IDXGISwapChain*, UINT, UINT) = nullptr;
-
-HRESULT STDMETHODCALLTYPE hk_Present(IDXGISwapChain* sc, UINT sync, UINT flags) {
-    // render overlay
-    return orig_Present(sc, sync, flags);
-}
-
-auto r = vh::vtable_hook(vtbl, 8,
-                         (void*)&hk_Present,
-                         (void**)&orig_Present,
-                         { .tag = "DXGI.Present" });
+// Every loaded module that imports this symbol
+auto hs = vh::iat_hook_all("kernel32.dll", "VirtualAlloc", &hk_VAlloc);
 ```
 
-</details>
+### PLT / GOT Hook (Linux / macOS)
 
-<details>
-<summary><b>Mid-function hook</b></summary>
-
-Installs a hook at a byte offset inside a function. Does not redirect control flow — observes and optionally modifies CPU register state at that point, then continues original execution.
+Redirects the Procedure Linkage Table / Global Offset Table entry for a shared library symbol.
 
 ```cpp
-auto r = vh::mid_hook(game_update_fn,
-    [](vh::MidContext* ctx) noexcept {
-        player_health = static_cast<int>(ctx->rax);
-    },
-    { .offset = 0x1C, .tag = "Game.HealthReadback" });
+auto h = vh::plt_hook("libc.so.6", "malloc", &hk_malloc);
 ```
 
-</details>
+### VTable Hook
+
+Patches a single slot in a C++ virtual dispatch table.
+
+```cpp
+void** vtbl = *reinterpret_cast<void***>(object_ptr);
+auto h = vh::vtable_hook(vtbl, /*slot=*/3, &hk_Render);
+```
+
+### Mid-Function Hook
+
+Installs a hook at a byte offset inside a function. The patch site is rounded up to the nearest complete instruction boundary. A `MidContext*` is passed to your callback with a full GPR + flags snapshot; the original instructions still execute after the callback returns. Mid hooks observe or modify register state — they do not redirect control flow.
+
+```cpp
+auto h = vh::mid_hook(&target_fn, /*byte_offset=*/0x2A,
+    [](vanhooks::MidContext* ctx) noexcept {
+        ctx->rax = 0; // zero out the return value at this program point
+    });
+```
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
 ## ♻️ Hook Lifetime and RAII
 
-Every hook creation function returns `Result<Hook>`. The `Hook` object removes the hook automatically when it is destroyed — you do not need to call remove manually in normal use.
+Every `vh::Hook` object owns its installation. When it goes out of scope the hook is automatically removed and the original bytes are restored — no manual cleanup required.
 
 ```cpp
 {
-    auto r = vh::hook(&fn, &detour);
-    // hook is live here
-}
-// hook automatically removed when r goes out of scope
+    auto h = vh::hook(&target, &detour, &orig);
+    // hook active
+} // hook removed here automatically
+
+// Explicit control
+h.enable();
+h.disable();
+h.remove(); // idempotent — safe to call multiple times
 ```
 
-To control hook state explicitly:
+`h.valid()` is false after removal. `h.tag()` returns the optional string label attached at install time. `h.handle()` gives the raw `HookHandle` for use with the Engine API directly.
+
+### Thread Safety & IP Fixup
+
+When `thread_safe = true` (the default), VanHooks suspends all threads in the process during the patch window and uses `ip_fixup_on_remove` to advance any thread whose instruction pointer landed inside the stolen prologue bytes, so removing a hook under live traffic never leaves a thread in an inconsistent state.
 
 ```cpp
-auto r = vh::hook(&fn, &detour);
-auto& h = *r;
-
-h.disable();    // deactivate without removing
-h.enable();     // reactivate
-h.remove();     // permanently remove (destructor also does this)
-
-h.valid();      // is the hook installed?
-h.enabled();    // is it currently active?
-h.tag();        // the tag string set at creation
+vanhooks::TrampolineOptions opts;
+opts.thread_safe = false; // disable if you own all threads
+opts.tag = "my_hook";
+auto h = vh::inline_hook(&target, &detour, &orig, opts);
 ```
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
-## 🗂️ Groups — Batch Lifecycle Management
+## 🗂️ Groups & Batch Lifecycle Management
 
-A `Group` owns multiple hooks and enables, disables, or removes them all inside a single thread-suspension window — significantly cheaper than operating on each hook individually.
+`vh::Group` is a named RAII container that owns a set of hooks and lets you enable, disable, or remove them all in a single atomic thread-suspension window.
 
 ```cpp
-auto grp = vh::group("RenderHooks");
+auto grp = vh::Group("render_hooks");
+grp.add(vh::hook(&fn_a, &hk_a, &orig_a))
+   .add(vh::hook(&fn_b, &hk_b, &orig_b))
+   .add(vh::hook(&fn_c, &hk_c, &orig_c));
 
-grp.add(vh::vtable_hook(vtbl, 8,  (void*)&hk_Present))
-   .add(vh::vtable_hook(vtbl, 16, (void*)&hk_Reset))
-   .add(vh::iat_hook("CreateDevice", (void*)&hk_CreateDevice));
-
-grp.enable();   // one suspension window for all three
+grp.enable();   // one suspension window — all three enabled atomically
 grp.disable();  // same
+// grp destructor calls remove_all() automatically
+```
 
-// Find a specific hook by tag
-grp.at("DXGI.Present").disable();
+Tags let you retrieve individual hooks by name:
 
-// Iterate
-for (auto& h : grp) {
-    printf("%s: %s\n", h.tag().c_str(), h.enabled() ? "on" : "off");
-}
+```cpp
+grp.at("shadow_hook").disable();
+```
 
-// Maximum performance — queue operations, flush once
-grp.queue_enable().apply();
+### Batch Queue API
+
+For finer control, queue operations and flush them in one window across group boundaries:
+
+```cpp
+auto& eng = vanhooks::global_engine();
+eng.queue_enable(h1);
+eng.queue_enable(h2);
+eng.queue_disable(h3);
+eng.apply_queued(); // single thread-suspension, all patches applied atomically
 ```
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
 ## 🔗 Hook Chaining
 
-A second detour can be inserted in front of an existing hook. Execution order after chaining:
+Chain additional detours onto an already-hooked target. Each link in the chain receives the previous detour's trampoline as its "original", forming a singly-linked list:
 
 ```
-new_detour → original_detour → real_function
+target → detour_N → ... → detour_1 → original
 ```
-
-Chain links must be removed in reverse order of creation.
 
 ```cpp
-auto base = vh::inline_hook(&fn, &detour1, &orig1).value();
-
-static decltype(&fn) chain_orig = nullptr;
-auto link = base.chain(&detour2, &chain_orig).value();
-
-// Later, in reverse order:
-link.remove();
-base.remove();
+auto base = vh::hook(&fn, &first_detour, &orig_fn);
+auto link = vh::Engine::chain(base.handle(), &second_detour, &orig_for_second);
+// Remove link before base — ChainOrderViolation is returned otherwise
 ```
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
-## ❗ Error Handling
+## ❌ Error Handling
 
-VanHooks uses `std::expected<T, vh::Error>` (aliased as `vh::Result<T>`) throughout. No exceptions are thrown, no global error state, zero overhead on the success path.
+Every VanHooks function returns `Result<T>` — a `std::expected<T, vanhooks::Error>`. No exceptions are thrown anywhere in the library.
 
 ```cpp
-auto r = vh::hook(&fn, &detour, &orig);
-
-if (!r) {
-    printf("failed: %s\n", vh::error_to_string(r.error()).data());
-    return;
+auto result = vh::hook(&target, &detour, &orig);
+if (!result) {
+    switch (result.error()) {
+        case vanhooks::Error::HookAlreadyExists:   /* ... */ break;
+        case vanhooks::Error::MemoryProtectFailed: /* ... */ break;
+        default:
+            printf("error: %s\n", vanhooks::error_to_string(result.error()).data());
+    }
 }
 
-vh::Hook h = std::move(*r);
+// Or with monadic chaining (C++23)
+vh::hook(&target, &detour, &orig)
+    .and_then([](vh::Hook h) -> Result<void> { /* use h */ return {}; })
+    .or_else([](vanhooks::Error e) -> Result<void> { /* log e */ return {}; });
 ```
 
-Chain results with `.and_then()` and `.transform_error()`:
+Notable error codes:
 
-```cpp
-auto r = vh::hook(&fn, &detour, &orig)
-    .and_then([](vh::Hook h) -> vh::Result<vh::Hook> {
-        h.disable();
-        return h;
-    });
-```
-
-See the [Functions Guide](VanHooks_Functions_Guide.md) for the full error code reference.
+| Code | Meaning |
+|---|---|
+| `ThreadInPrologue` | A thread's IP was inside the stolen bytes during a remove; IP fixup resolved it |
+| `BreakpointSlotExhausted` | All four DR0–DR3 hardware slots are in use |
+| `ChainOrderViolation` | A chain link was removed before its base hook |
+| `TrampolineNoSpace` | Trampoline pool slab exhausted — increase `trampoline_pool_size` in `Config` |
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
-## 🧩 Multi-Module Projects — HookRegistry
+## 🗃️ Multi-Module Projects — HookRegistry
 
-`HookRegistry` is a process-wide singleton that owns named Groups. Use it when multiple DLLs in the same process register hooks independently and a single shutdown call should clean all of them up.
+`vh::HookRegistry` is a process-wide singleton that lets code in separate DLLs register and look up named groups.
 
 ```cpp
-// Module A (render DLL):
-auto render = vh::group("Render");
-render.add(vh::vtable_hook(vtbl, 8, (void*)&hk_Present));
-vh::HookRegistry::global().register_group(std::move(render));
+// In module A
+auto grp = vh::Group("input_hooks");
+grp.add(vh::hook(&fn1, &hk1));
+vh::HookRegistry::global().register_group(std::move(grp));
 
-// Module B (network DLL):
-auto net = vh::group("Network");
-net.add(vh::api_hook("ws2_32", "send", &hk_send));
-vh::HookRegistry::global().register_group(std::move(net));
+// In module B
+if (auto* g = vh::HookRegistry::global().find_group("input_hooks"))
+    g->disable();
 
-// Shutdown — one call removes everything from both modules:
+// Global operations across all registered groups
+vh::HookRegistry::global().enable_all();
+vh::HookRegistry::global().disable_all();
 vh::HookRegistry::global().remove_all();
+
+// Total hook count across all groups
+size_t n = vh::HookRegistry::global().total_hook_count();
 ```
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
 ## 🔍 Pattern Scanner
 
-`#include <vh/vh.hpp>` — available when built with `VH_ENABLE_SCANNER=ON` (default).
-
-Boyer-Moore-Horspool scanner with IDA-style wildcard support. Operates over an arbitrary memory region, a named module, or all readable committed pages in the process.
+Scans a memory region for a byte pattern using IDA-style wildcard syntax, accelerated with Boyer–Moore–Horspool.
 
 ```cpp
-// IDA-style wildcards — scan the entire process
-auto r = vanhooks::scanner::scan_process("48 8B 05 ? ? ? ? 48 85 C0");
-if (r) {
-    for (auto addr : *r)
-        printf("match @ 0x%llx\n", (unsigned long long)addr);
+#include <vh/vh.hpp>
+
+// IDA-style: '?' is a wildcard byte
+auto result = vh::scan("48 8B 05 ? ? ? ? 48 85 C0");
+if (result) {
+    uintptr_t addr = *result;
 }
 
-// Scan within a named module
-auto hits = vanhooks::scanner::scan_module("game.exe", "55 48 89 E5 ? ? ? ?");
-
-// Scan a known region
-auto addrs = vanhooks::scanner::scan_pattern(base_ptr, region_size, "FF 25 ? ? ? ?");
-
-// Exact byte scan (no wildcards, fastest path)
-std::vector<uint8_t> needle = { 0x48, 0x8B, 0xCB };
-auto exact = vanhooks::scanner::scan_bytes(base_ptr, region_size, needle);
+// Scan a specific range
+auto result2 = vh::scan("E8 ? ? ? ? 85 C0 74", base, size);
 ```
-
-All overloads return `Result<std::vector<uintptr_t>>` or a plain `std::vector<uintptr_t>` for the exact scan. Patterns are validated at parse time; a malformed IDA string returns `Error::InvalidArgument` immediately.
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
-## 🛡️ Anti-Debug Detection
+## 🐛 Anti-Debug Detection
 
-`#include <vh/vh.hpp>` — available when built with `VH_ENABLE_ANTIDEBUG=ON` (default).
-
-Eight independent detection techniques run in one call and return a structured per-finding report. Useful for understanding what anti-debug measures a target applies, or for verifying that your own research environment is clean before instrumentation.
+`vanhooks::antidebug::check_all()` runs eight independent detection techniques and returns a structured `Report` with per-technique `Finding` records. Intended for vulnerability research tooling to enumerate what anti-debug measures a target uses, or to verify that a research environment is clean.
 
 ```cpp
+#include <vanhooks/antidebug.hpp>
+
 auto report = vanhooks::antidebug::check_all();
 
-if (report.any_detected())
-    printf("%d technique(s) flagged a debugger\n", report.detection_count());
+if (report.any_detected()) {
+    printf("%d technique(s) detected a debugger\n", report.detection_count());
+}
 
 for (auto& f : report.findings) {
-    printf("[%s] %s — %s\n",
-           f.detected ? "DETECTED" : "clean",
-           f.technique.c_str(),
-           f.detail.c_str());
+    printf("[%s] %-45s %s\n",
+        f.detected ? "DETECTED" : "clean   ",
+        f.technique.c_str(),
+        f.detail.c_str());
 }
 ```
 
-**Techniques covered (Windows):**
+### Techniques (Windows)
 
-| Technique | Method |
-|---|---|
-| `IsDebuggerPresent` | PEB.BeingDebugged flag |
-| `CheckRemoteDebuggerPresent` | Cross-process debugger handle |
-| `NtQueryInformationProcess(DebugPort)` | Debug port check via ntdll |
-| Heap flags | Debugger sets non-standard heap flags in PEB |
-| `NtGlobalFlag` | PEB flag bits 0x70 |
-| `CloseHandle(invalid)` | Raises `EXCEPTION_INVALID_HANDLE` under a debugger |
-| Timing anomaly | Measurable delay introduced by single-step execution |
-| Debugger process list | Scans running processes for x64dbg, IDA, WinDbg, Cheat Engine, etc. |
+| # | Technique | Method |
+|---|---|---|
+| 1 | `IsDebuggerPresent` | Reads `PEB.BeingDebugged` |
+| 2 | `CheckRemoteDebuggerPresent` | Cross-process debugger handle check |
+| 3 | `NtQueryInformationProcess(DebugPort)` | `ProcessDebugPort` via ntdll |
+| 4 | `HeapFlags` | Reads heap `Flags` / `ForceFlags` from PEB (x86 and x64 offsets) |
+| 5 | `NtGlobalFlag` | Checks bits `0x70` in `PEB.NtGlobalFlag` |
+| 6 | `CloseHandle(invalid)` | Raises `EXCEPTION_INVALID_HANDLE` under a debugger |
+| 7 | `TimingCheck` | Measures loop duration — >50 ms threshold is suspicious |
+| 8 | `DebuggerProcessList` | Snapshots running processes and matches known tool names (x64dbg, OllyDbg, IDA, Cheat Engine, Wireshark, etc.) |
 
-On Linux, `ptrace(TRACEME)` is used as a lightweight substitute. The `Report` struct is the same on all platforms.
+On **Linux** a `ptrace(PTRACE_TRACEME)` check is performed instead.
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
 ## 🔬 Disassembler
 
-`#include <vh/disasm.hpp>` (also pulled in by `<vh/vh.hpp>`). Always available — Zydis is always linked.
-
-VanHooks embeds Zydis for internal trampoline construction. `vh/disasm.hpp` exposes the same engine to end users, adding ergonomic wrappers for prologue decoding, relocation rewriting, and formatted listings.
+A Zydis-backed length disassembler and full instruction decoder, always available without any optional flag.
 
 ```cpp
 #include <vh/disasm.hpp>
 
-vh::disasm::Disassembler dis;
+// Length-disassemble (for prologue walking)
+size_t len = vh::disasm::instruction_length(address);
 
-// Decode one instruction at a known runtime address
-auto insn = dis.decode_one(code_span, runtime_address);
-if (insn)
-    printf("%s  (%u bytes)\n", insn->mnemonic.c_str(), insn->length);
-
-// Decode until the first unconditional branch or return
-for (auto& i : vh::disasm::decode_until_branch(fn_ptr, 128))
-    printf("  %s\n", vh::disasm::format_insn(i).c_str());
-
-// Compute the minimum safe patch byte count (never splits an instruction)
-auto len = vh::disasm::safe_copy_length(fn_ptr, 5 /*min bytes*/);
-
-// Rewrite RIP-relative operands after relocating bytes to a new address
-auto rr = vh::disasm::rewrite(insns, original_va, new_va);
-if (rr && rr->clean) {
-    // rr->code is ready to write to the stub region
+// Full decode
+auto insn = vh::disasm::decode(address);
+if (insn) {
+    printf("%s\n", insn->mnemonic.c_str());
 }
 
-// Print an entire decoded sequence
-auto listing = vh::disasm::format_listing(insns);
+// Decode a range
+for (auto& i : vh::disasm::decode_range(start, end)) {
+    printf("0x%llx  %s\n", i.address, i.text.c_str());
+}
 ```
 
-**ARM64** uses an internal fixed-width 4-byte decoder. Pass an explicit `vh::disasm::Arch` to override auto-detection.
+The disassembler is used internally by the trampoline builder for instruction-boundary alignment during prologue stealing and by the mid-function hook installer.
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
 ## 💉 Process Injection
 
-`#include <vh/inject.hpp>` (also pulled in by `<vh/vh.hpp>` when `VH_INJECT_ENABLED`). Available when built with `VH_ENABLE_INJECT=ON` (default). **Windows only** — returns `Error::Unsupported` on other platforms.
-
-Four injection methods, one unified RAII `Injection` handle. The handle ejects automatically when it goes out of scope, matching the lifetime model of `vh::Hook`.
+Four injection methods are available, each with distinct stealth and compatibility trade-offs. Requires `VH_INJECT_ENABLED`.
 
 ```cpp
-// LoadLibrary — simplest, easiest to detect
-auto inj = vh::inject(pid, "C:\\payloads\\research.dll");
-if (!inj) {
-    fprintf(stderr, "inject failed: %d\n", (int)inj.error());
-    return;
-}
-// DLL running in pid; ejected when inj destructs
+#include <vh/inject.hpp>
 
-// ManualMap — no module-list entry, PE header withheld
-std::vector<uint8_t> pe = load_from_resource();
-auto inj2 = vh::inject_from_memory(pid, pe,
-    { .method = vh::InjectMethod::ManualMap, .tag = "research" });
+// Inject by path
+auto inj = vh::inject(pid, "C:\\path\\to\\payload.dll", vh::InjectMethod::ManualMap);
 
-// ThreadHijack — no CreateRemoteThread syscall
-auto inj3 = vh::inject(pid, dll_path,
-    { .method = vh::InjectMethod::ThreadHijack });
+// Inject from in-memory PE bytes (no file on disk required)
+auto inj2 = vh::inject_from_memory(pid, pe_bytes, vh::InjectMethod::ManualMap);
 
-// ApcQueue — no new thread; fires on next alertable wait
-auto inj4 = vh::inject(pid, dll_path,
-    { .method = vh::InjectMethod::ApcQueue });
-
-// Explicit early eject
-auto r = inj->eject();
-
-// Inspect the handle
-printf("pid=%u  method=%d  tag=%s\n",
-       inj->pid(), (int)inj->method(), inj->tag().c_str());
+// RAII — eject when Injection goes out of scope, or explicitly:
+inj->eject();
 ```
 
-**Method trade-offs:**
+### Method Comparison
 
-| Method | Stealth | Notes |
-|---|---|---|
-| `LoadLibrary` | Low | Trivially visible in module list and LoadLibrary hooks |
-| `ManualMap` | Medium | No PEB loader-list entry; PE header withheld from remote allocation |
-| `ThreadHijack` | Medium-high | No `CreateRemoteThread`; briefly disturbs the hijacked thread |
-| `ApcQueue` | Medium-high | No new thread; timing is non-deterministic — fires only on alertable waits |
+| Method | Module-list entry | Remote thread created | Stealth |
+|---|:---:|:---:|:---:|
+| `LoadLibrary` | ✓ (visible) | ✓ | Low |
+| `ManualMap` | ✗ | ✓ (shellcode) | Medium |
+| `ThreadHijack` | Configurable | ✗ | High |
+| `ApcQueue` | Configurable | ✗ | High |
+
+**LoadLibrary** — `CreateRemoteThread` + `LoadLibraryA`. Simple but leaves a module-list entry and is trivially detectable by any `EnumProcessModules` scan.
+
+**ManualMap** — Parses the PE in-process, maps sections into the target without calling `LoadLibraryA`. No module-list entry. The PE header is withheld from the remote allocation. Shellcode is zeroed after execution, and no IAT trampolines are left behind.
+
+**ThreadHijack** — Suspends an existing thread, redirects its `RIP` to a compact shellcode stub that loads the payload, restores all volatile registers and the original instruction pointer via a RIP-relative jump, then resumes. No remote thread is created; no `CreateThread` call appears in any trace.
+
+**ApcQueue** — Queues a `LoadLibraryA` APC to every alertable thread. The DLL loads the next time any thread calls an alertable wait (`SleepEx`, `WaitForSingleObjectEx`, etc.). No remote thread; no visible injection event in ETW until the alertable wait fires.
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
-## 🔭 Symbol Resolution
+## 🥷 Stealth Configuration
 
-`#include <vh/symbols.hpp>` (also pulled in by `<vh/vh.hpp>` when `VH_SYMBOLS_ENABLED`). **Opt-in** — build with `-DVH_ENABLE_SYMBOLS=ON`. Disabled by default because it links `dbghelp` on Windows and `dl` on POSIX.
+Stealth features are controlled through `Engine::Config` at construction time.
 
-Resolves virtual addresses to human-readable names and source locations using the platform's native debug-info backend. The symbol backend initializes lazily on first use.
+```cpp
+vanhooks::Engine::Config cfg;
+
+// ETW suppression — patches ntdll!EtwEventWrite and EtwEventWriteFull
+// to return STATUS_SUCCESS immediately, silencing user-mode ETW telemetry
+// used by many EDR/AV products to detect API activity.
+cfg.suppress_etw = true;
+
+// AMSI suppression — patches amsi.dll!AmsiScanBuffer and AmsiScanString
+// to return AMSI_RESULT_CLEAN without scanning.
+// No-op if amsi.dll is not loaded in the process.
+cfg.suppress_amsi = true;
+
+// Watchdog thread is spawned via NtCreateThreadEx so CreateThread does
+// not appear in the IAT and avoids trivial thread-creation telemetry.
+cfg.enable_integrity_watchdog = true;
+
+vanhooks::Engine eng(cfg);
+```
+
+> **Note:** ETW and AMSI suppression are user-mode Tier 3 measures. They have no effect on HVCI / VBS-protected systems where kernel-mode ETW providers cannot be silenced from user mode.
+
+### Why NtCreateThreadEx?
+
+The integrity watchdog and internal background operations use `NtCreateThreadEx` (called directly via ntdll) rather than `CreateThread`. This means `CreateThread` does not appear in VanHooks' IAT, and thread-creation events attributed to VanHooks are not visible to `CreateThread`-level monitors.
+
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
+
+## 🐕 Integrity Watchdog
+
+The integrity watchdog is a background thread that polls all installed hooks at a configurable interval and reinstalls any that have been removed externally — for example, by a kernel driver that clears user-mode hooks.
+
+```cpp
+vanhooks::Engine::Config cfg;
+cfg.enable_integrity_watchdog = true;
+cfg.watchdog_interval_ms      = 250; // check every 250 ms (default: 500)
+
+vanhooks::Engine eng(cfg);
+```
+
+The watchdog detects removal by reading the first bytes of each hooked target and comparing them against the expected jump patch. If the bytes no longer match, the patch is reapplied within the next interval. This is transparent to the rest of the hook lifecycle — RAII destructors and explicit `remove()` calls still work normally; the watchdog only reacts to *external* removal.
+
+The watchdog thread is spawned via `NtCreateThreadEx` (see [Stealth Configuration](#-stealth-configuration)) and stops cleanly when the `Engine` is destroyed.
+
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
+
+## 🔣 Symbol Resolution
+
+Annotates addresses with function names, file names, and line numbers. Requires `VH_SYMBOLS_ENABLED`. Uses DbgHelp on Windows and libbacktrace on POSIX.
 
 ```cpp
 #include <vh/symbols.hpp>
 
-// Resolve any address to its nearest symbol
-if (auto sym = vh::symbols::resolve(some_address)) {
-    printf("%s + 0x%zx  [%s]\n",
-           sym->name.c_str(),
-           some_address - sym->address,
-           sym->module.c_str());
+auto sym = vh::symbols::resolve(address);
+if (sym) {
+    printf("%s  (%s:%u)\n", sym->name.c_str(), sym->file.c_str(), sym->line);
 }
-
-// Look up a symbol by name (optional module filter)
-if (auto addr = vh::symbols::find("NtQuerySystemInformation", "ntdll.dll"))
-    printf("found @ 0x%llx\n", (unsigned long long)*addr);
-
-// Source file + line number (requires PDB / DWARF debug info)
-if (auto loc = vh::symbols::source_location(some_address))
-    printf("%s:%u\n", loc->file.c_str(), loc->line);
-
-// Demangle a C++ symbol name
-auto readable = vh::symbols::demangle("_ZN3foo3barEv");
-
-// Capture and print the current call stack
-for (auto& line : vh::symbols::current_stack(32))
-    puts(line.c_str());
-
-// Pre-warm a module's symbol table before a hot path
-vh::symbols::load_module("C:\\MyApp\\engine.dll");
 ```
 
-**Backend by platform:**
-
-| Platform | Backend | Line info |
-|---|---|---|
-| Windows | `DbgHelp` — links `dbghelp.lib` | PDB via `_NT_SYMBOL_PATH` |
-| Linux | `dladdr` | DWARF via `libbacktrace` (`-DVH_SYMBOLS_BACKTRACE=ON`) |
-| macOS | `dladdr` | DWARF via `libbacktrace` (`-DVH_SYMBOLS_BACKTRACE=ON`) |
+When `VH_SYMBOLS_ENABLED` is defined, `callstack::capture_annotated()` automatically annotates each captured frame.
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
-## 🏛️ PE Introspection
+## 📄 PE Introspection
 
-`#include <vh/pe.hpp>` (also pulled in by `<vh/vh.hpp>` when `VH_PE_ENABLED`). Available when built with `VH_ENABLE_PE=ON` (default). **Windows only** — returns `Error::Unsupported` on other platforms.
-
-Structured, read-only access to any PE image that is currently mapped in the process — no file I/O, no extra dependencies.
+A zero-copy in-process PE reader that wraps a loaded module's memory. Requires `VH_PE_ENABLED`.
 
 ```cpp
 #include <vh/pe.hpp>
 
-// Open any loaded module by name (empty = main executable)
-auto view = vh::pe::open("ntdll.dll");
-if (!view) { /* Error::ModuleNotFound */ }
+auto pe = vh::pe::from_module("target.dll");
 
-// Walk exports — find a function without GetProcAddress
-for (auto& e : view->exports().value_or({}))
-    if (e.name == "NtQuerySystemInformation")
-        printf("found @ 0x%llx\n", (unsigned long long)e.address);
+// Sections
+for (auto& sec : pe->sections().value_or({}))
+    printf("%-8s  VA=0x%llx  size=0x%x  %c%c%c\n",
+        sec.name.c_str(), sec.virtual_address, sec.virtual_size,
+        sec.readable() ? 'R' : '-',
+        sec.writable() ? 'W' : '-',
+        sec.executable() ? 'X' : '-');
 
-// Read the IAT slot for a specific import
-auto imp = view->find_import("kernel32.dll", "VirtualProtect");
-if (imp) {
-    auto* slot = reinterpret_cast<void**>(imp->iat_address);
-    printf("IAT slot → %p\n", *slot);
-}
+// Exports
+auto exp = pe->find_export("SomeFunction");
+auto exp2 = pe->find_export_by_ordinal(42);
 
-// Locate code caves large enough for a 32-byte stub
-for (auto& cave : view->find_caves(32))
-    printf("[%s] 0x%llx  %zu bytes\n",
-           cave.section_name, (unsigned long long)cave.address, cave.size);
+// Imports
+auto imports = pe->imports_from("kernel32.dll");
 
-// List all loaded modules
-for (auto& m : vh::pe::modules().value_or({}))
-    printf("%s  base=0x%llx\n", m.name().data(), (unsigned long long)m.base());
-
-// Open a module by known base address
-auto view2 = vh::pe::open_at(base_va);
-
-// Open by HMODULE
-auto view3 = vh::pe::open_handle(hmod);
+// Code cave finder — find N bytes of zero-padding in executable sections
+auto caves = pe->find_caves(/*min_size=*/32, /*executable_only=*/true);
+for (auto& cave : caves)
+    printf("cave @ 0x%llx  size=%zu  in %s\n",
+        cave.address, cave.size, cave.section.c_str());
 ```
+
+`Pe` can also be constructed from a raw byte span (for offline / on-disk analysis) or from a base address directly.
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
-## 🐛 Breakpoints
+## 🔴 Breakpoints
 
-`#include <vh/breakpoint.hpp>` (also pulled in by `<vh/vh.hpp>` when `VH_BREAKPOINT_ENABLED`). Available when built with `VH_ENABLE_BREAKPOINT=ON` (default).
-
-Software and hardware breakpoints with RAII lifetime. The returned `Breakpoint` guard removes the breakpoint when it goes out of scope.
+Software (INT3 / VEH) and hardware (DR0–DR3 / DR7) breakpoints with full RAII lifetime management. Requires `VH_BREAKPOINT_ENABLED`.
 
 ```cpp
 #include <vh/breakpoint.hpp>
 
-// Software breakpoint — INT3 patched in-place; handled via VEH (Windows)
-// or SIGTRAP signal handler (Linux / macOS)
-auto bp = vh::breakpoint::set_software(target_addr,
+// Software breakpoint — patches one byte to 0xCC, installs a VEH handler
+auto sw = vanhooks::breakpoint::set_software(target_address,
     [](uintptr_t addr) {
-        printf("SW hit @ 0x%llx\n", (unsigned long long)addr);
-        return vh::breakpoint::Action::Continue;
+        printf("SW BP hit @ 0x%llx\n", addr);
+        return vanhooks::breakpoint::Action::Continue; // re-arm and resume
     });
-if (!bp) { /* handle Error::BreakpointSlotExhausted etc. */ }
 
-// Hardware breakpoint — uses DR0–DR3; x86-64 only
-auto hw = vh::breakpoint::set_hardware(
-    addr,
-    vh::breakpoint::HwCondition::Execute,
-    vh::breakpoint::HwSize::Byte,
-    [](uintptr_t a) { return vh::breakpoint::Action::Continue; });
+// Hardware breakpoint — DR0–DR3, applied to all currently-running threads
+auto hw = vanhooks::breakpoint::set_hardware(
+    target_address,
+    vanhooks::breakpoint::HwCondition::Execute,
+    vanhooks::breakpoint::HwSize::Byte,
+    [](uintptr_t addr) {
+        printf("HW BP hit @ 0x%llx\n", addr);
+        return vanhooks::breakpoint::Action::Remove; // one-shot
+    });
 
-// Propagate the hardware BP to a newly created thread (DLL_THREAD_ATTACH)
-hw->apply_to_new_thread(hthread_of_new_thread);
-
-// Explicit removal (destructor also does this)
-bp->remove();
+// Both removed automatically when sw / hw go out of scope
 ```
 
-Hardware breakpoints return `Error::Unsupported` on non-x86-64 targets and `Error::BreakpointSlotExhausted` if all four DR slots are already occupied.
+### Conditions and Sizes
+
+| `HwCondition` | DR7 encoding | Description |
+|---|---|---|
+| `Execute` | `00` | Break on instruction fetch (size must be `Byte`) |
+| `Write` | `01` | Break on memory write |
+| `ReadWrite` | `11` | Break on read or write (not execute) |
+
+| `HwSize` | DR7 encoding | Range |
+|---|---|---|
+| `Byte` | `00` | 1 byte |
+| `Word` | `01` | 2 bytes |
+| `Dword` | `11` | 4 bytes |
+| `Qword` | `10` | 8 bytes (x64 only) |
+
+### New Thread Propagation
+
+Hardware breakpoints are applied per-thread at install time. For threads created after the breakpoint is installed, call `apply_to_new_thread` from a `DLL_THREAD_ATTACH` notification:
+
+```cpp
+BOOL WINAPI DllMain(HINSTANCE, DWORD reason, LPVOID) {
+    if (reason == DLL_THREAD_ATTACH && hw_bp.active())
+        hw_bp->apply_to_new_thread(GetCurrentThread());
+    return TRUE;
+}
+```
+
+`BreakpointSlotExhausted` is returned when all four DR slots (DR0–DR3) are occupied.
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
-## 📡 Call Stack Capture
+## 📚 Call Stack Capture
 
-`#include <vh/callstack.hpp>` (also pulled in by `<vh/vh.hpp>` when `VH_CALLSTACK_ENABLED`). Available when built with `VH_ENABLE_CALLSTACK=ON` (default). No extra dependencies — raw capture uses `RtlCaptureStackBackTrace` on Windows and `backtrace(3)` on POSIX. Annotated frames (`capture_annotated`) additionally require `VH_ENABLE_SYMBOLS=ON`.
+Thin wrapper around `RtlCaptureStackBackTrace` (Windows) / `backtrace()` (POSIX). Requires `VH_CALLSTACK_ENABLED`.
 
 ```cpp
 #include <vh/callstack.hpp>
 
-// Raw addresses — no symbol resolution needed
-auto frames = vh::callstack::capture();   // skip=1, max_depth=64
-if (frames) {
-    for (auto addr : *frames)
-        printf("  0x%016llx\n", (unsigned long long)addr);
-}
-
-// Inside a hook detour — skip VanHooks frames off the top
-auto frames2 = vh::callstack::capture(/* skip= */ 2, /* max_depth= */ 32);
+// Raw frame addresses — no heap allocation on Windows capture path
+auto frames = vanhooks::callstack::capture(/*skip=*/1, /*max_depth=*/32);
+for (auto addr : frames.value_or({}))
+    printf("  0x%llx\n", addr);
 
 // Annotated frames (requires VH_SYMBOLS_ENABLED)
-auto annotated = vh::callstack::capture_annotated();
-if (annotated)
-    printf("%s", vh::callstack::format(*annotated).c_str());
-
-// Convenience: capture + format in one call
-auto stack_str = vh::callstack::format(
-    *vh::callstack::capture_annotated().value_or({}));
+auto annotated = vanhooks::callstack::capture_annotated();
+for (auto& f : annotated.value_or({}))
+    printf("  %-40s  %s:%u\n", f.name.c_str(), f.file.c_str(), f.line);
 ```
 
-Each annotated frame line has the form:
-```
-#N  0xADDRESS  symbol_name + 0xOFFSET  [module.dll]  src/file.cpp:42
-```
-Frames that cannot be resolved fall back to their raw address.
+The `skip` parameter lets you omit VanHooks' own frames when capturing from inside a detour. Maximum depth is capped at 64 frames; deeper stacks are silently truncated.
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
 ## 🌐 VanNet — Built-in Network Layer
 
-**VanNet** is VanHooks' built-in network layer: live packet capture, offline
-pcap/pcapng read/write, BPF filtering, and full protocol parsing, compiled
-directly into `libvanhooks` alongside the hooking engine with no external
-runtime dependencies of its own.
-
-### Enable / disable
-
-VanNet is **opt-in** (`OFF` by default) because it is the only module that requires a non-system external library (Npcap on Windows, libpcap on POSIX).
-
-```bash
-cmake -B build -DVH_ENABLE_NET=ON    # enable packet capture
-cmake -B build                        # VH_ENABLE_NET=OFF — no pcap dep
-```
-
-### Quick start
+An optional packet capture and protocol parsing layer derived from PcapPlusPlus, rewritten in VanHooks' snake_case conventions and integrated into the `vanhooks::net` namespace. Requires `VH_NET_ENABLED` and an installed Npcap / libpcap.
 
 ```cpp
-#include <vh/vh.hpp>   // VanNet pulled in automatically
+#include <vh/net.hpp>
 
-// Hook a function
-auto hook = vh::hook(&target, &detour);
+// Open a live capture device
+auto dev = vh::net::open_device("eth0");
+dev->start_capture([](vh::net::Packet& pkt) {
+    if (auto* ip = pkt.layer<vh::net::IPv4Layer>()) {
+        printf("%s → %s\n",
+            ip->src_addr().to_string().c_str(),
+            ip->dst_addr().to_string().c_str());
+    }
+});
 
-// Capture packets from the same host
-auto cap = vh::net::Capture::open("eth0");
-if (cap) {
-    cap->filter("tcp port 443");
-    cap->start([](vh::net::Packet pkt) {
-        printf("captured %zu bytes\n", pkt.raw_len());
-
-        // Full layer-by-layer parse
-        if (auto parsed = pkt.parse()) {
-            auto* ip = parsed->getLayerOfType<vanhooks::net::IPv4Layer>();
-            if (ip)
-                printf("  src=%s\n", ip->getSrcIPAddress().to_string().c_str());
-        }
-    });
-}
+// Read an offline pcapng file
+auto reader = vh::net::open_pcapng("capture.pcapng");
+while (auto pkt = reader->next_packet()) { /* ... */ }
 ```
 
-### API reference
-
-| Type | Description |
-|---|---|
-| `vh::net::Capture` | RAII live capture. `open()` → `filter()` → `start(cb)` → `stop()` |
-| `vh::net::PcapReader` | Read `.pcap` / `.pcapng` files packet by packet |
-| `vh::net::PcapWriter` | Write raw or parsed packets to a `.pcap` file |
-| `vh::net::Filter` | BPF expression builder |
-| `vh::net::Packet` | Non-owning view returned in the callback; call `parse()` for full decode |
-| `vh::net::devices()` | List all live-capture-capable interfaces |
-
-All factory methods return `vh::Result<T>` (`std::expected<T, vh::Error>`),
-matching the rest of the VanHooks API exactly.
+Protocol layers include L2 (Ethernet, VLAN, SLL), L3 (IPv4, IPv6, ARP, ICMP), L4 (TCP, UDP, SCTP), and higher-level layers (DNS, HTTP, TLS, DHCP, and more). The `VHPcapNg` module provides a flattened reader/writer for `.pcapng` files with interface block and enhanced packet block support.
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
-## ⚙️ Optional Modules
+## 🧩 Optional Modules
 
-The library is **zero external dependencies by default** (beyond Zydis, which is always linked). The two modules that introduce external link deps are **opt-in**. Everything else is on by default and adds only OS APIs already in the implicit link set.
-
-### Zero-dependency modules (on by default)
-
-| CMake Option | Default | What it gates | Extra link deps |
+| Module | CMake flag | Header | Description |
 |---|---|---|---|
-| `VH_ENABLE_SCANNER` | `ON` | `vanhooks::scanner::` pattern scanner | — |
-| `VH_ENABLE_ANTIDEBUG` | `ON` | `vanhooks::antidebug::` detection | — |
-| `VH_ENABLE_INJECT` | `ON` | `vh::inject` / `vh::inject_from_memory` | `psapi` ¹ |
-| `VH_ENABLE_PE` | `ON` | `vh::pe::` introspection | `psapi` ¹ |
-| `VH_ENABLE_BREAKPOINT` | `ON` | `vh::breakpoint::set_software/hardware` | `kernel32` ² |
-| `VH_ENABLE_CALLSTACK` | `ON` | `vh::callstack::capture` + formatting | — |
+| Symbol resolution | `VH_SYMBOLS_ENABLED` | `<vh/symbols.hpp>` | Function name / file / line annotation |
+| PE introspection | `VH_PE_ENABLED` | `<vh/pe.hpp>` | Sections, exports, imports, code caves |
+| Breakpoints | `VH_BREAKPOINT_ENABLED` | `<vh/breakpoint.hpp>` | SW (INT3/VEH) and HW (DR0–DR3) |
+| Call stack | `VH_CALLSTACK_ENABLED` | `<vh/callstack.hpp>` | `RtlCaptureStackBackTrace` / `backtrace()` |
+| Injection | `VH_INJECT_ENABLED` | `<vh/inject.hpp>` | LoadLibrary, ManualMap, ThreadHijack, ApcQueue |
+| VanNet | `VH_NET_ENABLED` | `<vh/net.hpp>` | Packet capture + protocol parsing |
 
-> ¹ `psapi` is a standard Windows system library, not an external dependency.  
-> ² `kernel32` is always linked; breakpoints add no new dep.
-
-### Opt-in modules (off by default — add external dependencies)
-
-| CMake Option | Default | What it gates | External deps added |
-|---|---|---|---|
-| `VH_ENABLE_NET` | **`OFF`** | VanNet packet capture + protocol parsing | `wpcap` (Windows/Npcap) / `pcap` (POSIX/libpcap) |
-| `VH_ENABLE_SYMBOLS` | **`OFF`** | `vh::symbols::` resolution + demangling | `dbghelp` (Windows) / `dl` (POSIX) |
-| `VH_SYMBOLS_BACKTRACE` | `OFF` | DWARF line-info via `libbacktrace` on POSIX | `backtrace` |
-
-Enable them when you need them:
-
-```bash
-# Full toolkit including network capture and symbol resolution
-cmake -B build -DVH_ENABLE_NET=ON -DVH_ENABLE_SYMBOLS=ON
-
-# POSIX: also enable DWARF line info
-cmake -B build -DVH_ENABLE_SYMBOLS=ON -DVH_SYMBOLS_BACKTRACE=ON
-```
-
-**Minimum build** (hooking engine + disassembler only — strip everything optional):
-
-```bash
-cmake -B build \
-  -DVH_ENABLE_SCANNER=OFF \
-  -DVH_ENABLE_ANTIDEBUG=OFF \
-  -DVH_ENABLE_INJECT=OFF \
-  -DVH_ENABLE_PE=OFF \
-  -DVH_ENABLE_BREAKPOINT=OFF \
-  -DVH_ENABLE_CALLSTACK=OFF
-# VH_ENABLE_NET and VH_ENABLE_SYMBOLS are already OFF by default
-```
-
-The disassembler (`vh/disasm.hpp`) is always compiled in — Zydis is required by the hooking engine itself.
+All of the above are off by default. The always-on core (hooking, scanner, disassembler, antidebug) has **zero dependencies beyond Zydis**.
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
 ## 🖥️ Platform Support
 
-<div align="center">
-
-| Platform | x86 | x64 | ARM64 |
-|:---:|:---:|:---:|:---:|
-| 🪟 Windows | ✅ | ✅ | 🟡 Build from source |
-| 🐧 Linux | — | ✅ | ✅ |
-| 🍎 macOS | — | ✅ | ✅ |
-
-</div>
-
-Precompiled `.lib` files are provided for Windows x86 and x64. ARM64 and POSIX targets require a source build — see [`lib/README.md`](lib/README.md).
-
-**Module availability by platform:**
-
-| Module | Windows | Linux | macOS |
-|---|:---:|:---:|:---:|
-| Hooking (all types) | ✅ | ✅ | ✅ |
-| Disassembler | ✅ | ✅ | ✅ |
-| Pattern scanner | ✅ | ✅ | ✅ |
-| Call stack | ✅ | ✅ | ✅ |
-| Anti-debug | ✅ (8 checks) | ✅ (ptrace) | ✅ (ptrace) |
-| Symbol resolution | ✅ (DbgHelp) | ✅ (dladdr) | ✅ (dladdr) |
-| VanNet | ✅ (Npcap) | ✅ (libpcap) | ✅ (libpcap) |
-| PE introspection | ✅ | ✗ | ✗ |
-| Process injection | ✅ | ✗ | ✗ |
-| Hardware breakpoints | ✅ (DR0–DR3) | 🟡 | 🟡 |
+| Feature | Windows x86 | Windows x64 | Linux x64 | Linux ARM64 | macOS x64 | macOS ARM64 |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| Trampoline hook | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| IAT hook | ✓ | ✓ | — | — | — | — |
+| PLT / GOT hook | — | — | ✓ | ✓ | ✓ | ✓ |
+| macOS lazy pointer hook | — | — | — | — | ✓ | ✓ |
+| VTable hook | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Mid-function hook | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Software breakpoints | ✓ | ✓ | ✓ | — | ✓ | — |
+| Hardware breakpoints (DR) | ✓ | ✓ | ✓ | — | stub | stub |
+| Anti-debug (full suite) | ✓ | ✓ | ptrace | ptrace | — | — |
+| ETW / AMSI suppression | ✓ | ✓ | — | — | — | — |
+| Process injection | ✓ | ✓ | — | — | — | — |
+| Integrity watchdog | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| MinGW cross-compile | ✓ | ✓ | — | — | — | — |
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
 ## ❓ FAQ
 
-<details>
-<summary><b>Does VanHooks throw exceptions?</b></summary>
-<br/>
-No. Every fallible operation returns <code>vh::Result&lt;T&gt;</code> (<code>std::expected&lt;T, vh::Error&gt;</code>). The library never throws from its own code paths.
-</details>
+**Does VanHooks work with MinGW i686 cross-compilation?**
+Yes. Windows x86 and x64 targets build cleanly under MinGW with static linking. All Windows-specific code guards against MSVC intrinsics that MinGW does not provide.
 
-<details>
-<summary><b>Do I need CMake to use VanHooks?</b></summary>
-<br/>
-No — drop-in usage only requires copying <code>include/</code> and linking the precompiled <code>.lib</code>. CMake is optional and mainly useful for ARM64/POSIX source builds, VanNet configuration, and toggling optional modules.
-</details>
+**Will the watchdog fight with kernel-mode anti-cheat?**
+The watchdog detects *user-mode* patch removal by reading bytes. Kernel drivers that use kernel-mode hooks or memory scanning operate below the watchdog's visibility. The watchdog is designed for the case where a kernel driver clears user-mode hooks in the IAT or prologue; it is not a bypass for protected-process anti-cheat.
 
-<details>
-<summary><b>Can I use VanHooks without VanNet?</b></summary>
-<br/>
-Yes. Build with <code>-DVH_ENABLE_NET=OFF</code> to exclude the packet capture and protocol parsing layer entirely.
-</details>
+**What happens if all four DR slots are full?**
+`set_hardware` returns `Error::BreakpointSlotExhausted`. Remove an existing hardware breakpoint to free a slot.
 
-<details>
-<summary><b>Can I strip out specific modules to reduce binary size?</b></summary>
-<br/>
-Yes — every optional layer has its own CMake flag. See the <a href="#️-optional-modules">Optional Modules</a> table for the full list. The disassembler is the only component that cannot be excluded, as it is required by the hooking engine itself.
-</details>
+**Is there a global engine or must I construct one?**
+`vanhooks::global_engine()` returns a default-constructed process-wide singleton. You can also construct your own `Engine` instances with custom `Config` for isolated trampoline pools or per-subsystem watchdog settings.
 
-<details>
-<summary><b>What happens if I hook a function that's already hooked by another library?</b></summary>
-<br/>
-Behavior depends on hook type and installation order. Use <code>HookRegistry</code> and <code>tag()</code> to track ownership across modules, and prefer <code>chain()</code> over re-hooking the same target directly.
-</details>
-
-<details>
-<summary><b>Do hardware breakpoints apply to threads created after installation?</b></summary>
-<br/>
-Not automatically. Call <code>hw_bp->apply_to_new_thread(hthread)</code> from <code>DLL_THREAD_ATTACH</code> in your DLL to propagate debug registers to each new thread.
-</details>
-
-<details>
-<summary><b>Does ManualMap injection hide the DLL completely?</b></summary>
-<br/>
-It hides the module from the PEB loader list and withholds the PE header from the remote allocation, which defeats common module-list scans. It does not defeat all detection methods — code-section heuristics, memory region attribute scans, and integrity checks that walk image pages may still locate the mapping. Prefer <code>ManualMap</code> over <code>LoadLibrary</code> for research contexts, and combine it with VanHooks' hooking layer to intercept any loader callbacks the target registers.
-</details>
-
-<details>
-<summary><b>Does symbol resolution work without PDB files?</b></summary>
-<br/>
-On Windows, function names exported by the module's export table are resolvable without a PDB. Full name resolution (including non-exported functions and inlined frames) requires a matching PDB reachable via <code>_NT_SYMBOL_PATH</code> or Microsoft's public symbol server. On Linux and macOS, compile with <code>-g -rdynamic</code>; for DWARF line info, also link <code>libbacktrace</code> and set <code>-DVH_SYMBOLS_BACKTRACE=ON</code>.
-</details>
+**Can I use VanHooks inside a DLL injected via ManualMap?**
+Yes — VanHooks does not rely on `DllMain` or the loader lock internally.
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
-## 📚 Documentation
+## 📖 Documentation
 
-- **[VanHooks_Functions_Guide.md](VanHooks_Functions_Guide.md)** — Complete API reference: every function, every configuration field, every error code.
-- **[lib/README.md](lib/README.md)** — Precompiled library matrix, MSVC project setup, and build-from-source instructions for ARM64 and POSIX.
-
-<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
-
-<div align="center">
-
-## 📄 License
-
-**MIT** — see [LICENSE](LICENSE)
-<img width="100%" src="https://capsule-render.vercel.app/api?type=waving&color=0:000000,50:8B0000,100:000000&height=120&section=footer"/>
-
-</div>
+Full API reference, architecture notes, and worked examples are in the [Wiki](../../wiki).
