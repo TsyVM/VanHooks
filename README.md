@@ -525,19 +525,6 @@ for (auto& f : report.findings)
         f.technique.c_str(), f.detail.c_str());
 ```
 
-| # | Technique | Method |
-|---|---|---|
-| 1 | `IsDebuggerPresent` | Reads `PEB.BeingDebugged` |
-| 2 | `CheckRemoteDebuggerPresent` | Cross-process debugger handle check |
-| 3 | `NtQueryInformationProcess` | `ProcessDebugPort` via ntdll |
-| 4 | `HeapFlags` | Reads heap `Flags` / `ForceFlags` from PEB |
-| 5 | `NtGlobalFlag` | Checks bits `0x70` in `PEB.NtGlobalFlag` |
-| 6 | `CloseHandle(invalid)` | Raises `EXCEPTION_INVALID_HANDLE` under a debugger |
-| 7 | `TimingCheck` | Loop duration — >50 ms threshold is suspicious |
-| 8 | `DebuggerProcessList` | Matches known tool names (x64dbg, OllyDbg, IDA, Cheat Engine, Wireshark…) |
-
-On **Linux**, a `ptrace(PTRACE_TRACEME)` check is performed instead.
-
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
 ## 🔬 Disassembler
