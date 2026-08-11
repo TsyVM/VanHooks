@@ -751,4 +751,5 @@ Yes — VanHooks does not rely on `DllMain` or the loader lock internally.
 
 ## 📖 Documentation
 
-Full API reference, architecture notes, and worked examples are in the [Wiki](../../wiki).
+Full API reference, architecture notes, and worked examples are in the [Functions_Guide](
+https://github.com/TsyVM/VanHooks/blob/main/VanHooks_Functions_Guide.md).
