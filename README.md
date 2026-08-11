@@ -27,7 +27,7 @@
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
-VanHooks is a production-grade, cross-platform function hooking and instrumentation library for C++23. It provides inline trampoline hooks, import table hooks, procedure linkage table hooks, virtual function table hooks, and mid-function register-context hooks — all through a single unified API backed by `std::expected` error handling and RAII lifetime management. Beyond hooking, the library ships a complete instrumentation toolkit: a pattern scanner, disassembler, process injector, symbol resolver, PE introspection layer, software and hardware breakpoints, call stack capture, and anti-debug detection. A built-in network layer, **VanNet**, ships in the same library for live packet capture and protocol parsing. Every feature uses the same `Result<T>` error model and the same `#include <vh/vh.hpp>` entry point.
+VanHooks is a production-grade, cross-platform function hooking and instrumentation library for C++23. It provides inline trampoline hooks, import table hooks, procedure linkage table hooks, virtual function table hooks, and mid-function register-context hooks — all through a single unified API backed by `std::expected` error handling and RAII lifetime management. Beyond hooking, the library ships a complete instrumentation toolkit: a pattern scanner, disassembler, process injector, PE introspection layer, software and hardware breakpoints, call stack capture, and anti-debug detection — all enabled by default with **zero external dependencies beyond Zydis**. An optional symbol resolution layer and an optional network layer (**VanNet**, for live packet capture and protocol parsing) can be enabled when needed. Every feature uses the same `Result<T>` error model and the same `#include <vh/vh.hpp>` entry point.
 
 <div align="center">
 
@@ -102,7 +102,7 @@ VanHooks is a production-grade, cross-platform function hooking and instrumentat
 | CMake | 3.25+ (optional — drop-in use requires no build system) |
 | Windows target | Windows 10 1903 / Windows Server 2019 |
 
-> No runtime dependencies for the hooking engine. Zydis is compiled into the library. All optional modules are self-contained except `vh/symbols.hpp` (links `dbghelp.lib` on Windows, `dl` on POSIX) and VanNet (links `wpcap`/`pcap`).
+> **Zero external dependencies by default.** Zydis is the only third-party library and is compiled in via FetchContent. VanNet (`-DVH_ENABLE_NET=ON`) adds `wpcap`/`pcap`; symbol resolution (`-DVH_ENABLE_SYMBOLS=ON`) adds `dbghelp` on Windows or `dl` on POSIX. All other optional modules link only OS APIs already in the implicit link set.
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
@@ -572,7 +572,7 @@ printf("pid=%u  method=%d  tag=%s\n",
 
 ## 🔭 Symbol Resolution
 
-`#include <vh/symbols.hpp>` (also pulled in by `<vh/vh.hpp>` when `VH_SYMBOLS_ENABLED`). Available when built with `VH_ENABLE_SYMBOLS=ON` (default).
+`#include <vh/symbols.hpp>` (also pulled in by `<vh/vh.hpp>` when `VH_SYMBOLS_ENABLED`). **Opt-in** — build with `-DVH_ENABLE_SYMBOLS=ON`. Disabled by default because it links `dbghelp` on Windows and `dl` on POSIX.
 
 Resolves virtual addresses to human-readable names and source locations using the platform's native debug-info backend. The symbol backend initializes lazily on first use.
 
@@ -697,7 +697,7 @@ Hardware breakpoints return `Error::Unsupported` on non-x86-64 targets and `Erro
 
 ## 📡 Call Stack Capture
 
-`#include <vh/callstack.hpp>` (also pulled in by `<vh/vh.hpp>` when `VH_CALLSTACK_ENABLED`). Available when built with `VH_ENABLE_CALLSTACK=ON` (default). No extra dependencies — uses `RtlCaptureStackBackTrace` on Windows and `backtrace(3)` on POSIX.
+`#include <vh/callstack.hpp>` (also pulled in by `<vh/vh.hpp>` when `VH_CALLSTACK_ENABLED`). Available when built with `VH_ENABLE_CALLSTACK=ON` (default). No extra dependencies — raw capture uses `RtlCaptureStackBackTrace` on Windows and `backtrace(3)` on POSIX. Annotated frames (`capture_annotated`) additionally require `VH_ENABLE_SYMBOLS=ON`.
 
 ```cpp
 #include <vh/callstack.hpp>
@@ -739,9 +739,11 @@ runtime dependencies of its own.
 
 ### Enable / disable
 
+VanNet is **opt-in** (`OFF` by default) because it is the only module that requires a non-system external library (Npcap on Windows, libpcap on POSIX).
+
 ```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Release   # VH_ENABLE_NET=ON by default
-cmake -B build -DVH_ENABLE_NET=OFF          # hooking only, smaller binary
+cmake -B build -DVH_ENABLE_NET=ON    # enable packet capture
+cmake -B build                        # VH_ENABLE_NET=OFF — no pcap dep
 ```
 
 ### Quick start
@@ -787,32 +789,51 @@ matching the rest of the VanHooks API exactly.
 
 ## ⚙️ Optional Modules
 
-All modules are enabled by default. Pass `-D<FLAG>=OFF` to CMake to exclude any layer from the build, reducing binary size and external dependencies.
+The library is **zero external dependencies by default** (beyond Zydis, which is always linked). The two modules that introduce external link deps are **opt-in**. Everything else is on by default and adds only OS APIs already in the implicit link set.
+
+### Zero-dependency modules (on by default)
 
 | CMake Option | Default | What it gates | Extra link deps |
 |---|---|---|---|
-| `VH_ENABLE_NET` | `ON` | VanNet packet capture + protocol parsing | `wpcap` / `pcap` |
 | `VH_ENABLE_SCANNER` | `ON` | `vanhooks::scanner::` pattern scanner | — |
 | `VH_ENABLE_ANTIDEBUG` | `ON` | `vanhooks::antidebug::` detection | — |
-| `VH_ENABLE_INJECT` | `ON` | `vh::inject` / `vh::inject_from_memory` | `psapi` (Windows) |
-| `VH_ENABLE_SYMBOLS` | `ON` | `vh::symbols::` resolution + demangling | `dbghelp` (Win) / `dl` (POSIX) |
-| `VH_ENABLE_PE` | `ON` | `vh::pe::` introspection | `psapi` (Windows) |
-| `VH_ENABLE_BREAKPOINT` | `ON` | `vh::breakpoint::set_software/hardware` | `kernel32` (Windows) |
+| `VH_ENABLE_INJECT` | `ON` | `vh::inject` / `vh::inject_from_memory` | `psapi` ¹ |
+| `VH_ENABLE_PE` | `ON` | `vh::pe::` introspection | `psapi` ¹ |
+| `VH_ENABLE_BREAKPOINT` | `ON` | `vh::breakpoint::set_software/hardware` | `kernel32` ² |
 | `VH_ENABLE_CALLSTACK` | `ON` | `vh::callstack::capture` + formatting | — |
+
+> ¹ `psapi` is a standard Windows system library, not an external dependency.  
+> ² `kernel32` is always linked; breakpoints add no new dep.
+
+### Opt-in modules (off by default — add external dependencies)
+
+| CMake Option | Default | What it gates | External deps added |
+|---|---|---|---|
+| `VH_ENABLE_NET` | **`OFF`** | VanNet packet capture + protocol parsing | `wpcap` (Windows/Npcap) / `pcap` (POSIX/libpcap) |
+| `VH_ENABLE_SYMBOLS` | **`OFF`** | `vh::symbols::` resolution + demangling | `dbghelp` (Windows) / `dl` (POSIX) |
 | `VH_SYMBOLS_BACKTRACE` | `OFF` | DWARF line-info via `libbacktrace` on POSIX | `backtrace` |
 
-**Minimum build** (hooking engine + disassembler only):
+Enable them when you need them:
+
+```bash
+# Full toolkit including network capture and symbol resolution
+cmake -B build -DVH_ENABLE_NET=ON -DVH_ENABLE_SYMBOLS=ON
+
+# POSIX: also enable DWARF line info
+cmake -B build -DVH_ENABLE_SYMBOLS=ON -DVH_SYMBOLS_BACKTRACE=ON
+```
+
+**Minimum build** (hooking engine + disassembler only — strip everything optional):
 
 ```bash
 cmake -B build \
-  -DVH_ENABLE_NET=OFF \
   -DVH_ENABLE_SCANNER=OFF \
   -DVH_ENABLE_ANTIDEBUG=OFF \
   -DVH_ENABLE_INJECT=OFF \
-  -DVH_ENABLE_SYMBOLS=OFF \
   -DVH_ENABLE_PE=OFF \
   -DVH_ENABLE_BREAKPOINT=OFF \
   -DVH_ENABLE_CALLSTACK=OFF
+# VH_ENABLE_NET and VH_ENABLE_SYMBOLS are already OFF by default
 ```
 
 The disassembler (`vh/disasm.hpp`) is always compiled in — Zydis is required by the hooking engine itself.
