@@ -5,7 +5,8 @@
  * Simplified, discoverable configuration structs under vh::config::.
  *
  * These replace the verbose TrampolineOptions / IATOptions / PLTOptions /
- * VTableOptions from vanhooks::. 
+ * VTableOptions from vanhooks::. The old names are kept as deprecated aliases
+ * so all existing code continues to compile unchanged.
  */
 
 #include <string>
