@@ -23,6 +23,11 @@
 // ── Disassembler (always available — Zydis is always linked) ────────────────
 #include "disasm.hpp"
 
+// ── VanTrace instrumentation layer (opt-out via VH_ENABLE_TRACE=OFF) ─────────
+#if defined(VH_TRACE_ENABLED)
+#  include "trace.hpp"
+#endif
+
 // ── Optional network layer ───────────────────────────────────────────────────
 #ifdef VH_NET_ENABLED
 #  include "net.hpp"
