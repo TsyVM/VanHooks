@@ -125,12 +125,51 @@ template<typename Fn>
         .transform([&eng](HookHandle h) { return Hook(eng, h); });
 }
 
+// Address-based overloads — accept a raw uintptr_t target so callers working
+// with runtime-resolved addresses do not need a reinterpret_cast at every site.
+//
+//   vh::hook(0x5D5DB0, &MyFunc);
+//   vh::hook(0x5E7859, &MyDetour, &orgFunc);
+template<typename Fn>
+[[nodiscard]] Result<Hook> hook(uintptr_t target, Fn* detour) {
+    auto& eng = vanhooks::global_engine();
+    return detail::eng_hook_trampoline(&eng,
+        reinterpret_cast<void*>(target),
+        reinterpret_cast<void*>(detour),
+        nullptr, true, {})
+        .transform([&eng](HookHandle h) { return Hook(eng, h); });
+}
+
+template<typename Fn>
+[[nodiscard]] Result<Hook> hook(uintptr_t target, Fn* detour, Fn** original_out) {
+    auto& eng = vanhooks::global_engine();
+    return detail::eng_hook_trampoline(&eng,
+        reinterpret_cast<void*>(target),
+        reinterpret_cast<void*>(detour),
+        reinterpret_cast<void**>(original_out), true, {})
+        .transform([&eng](HookHandle h) { return Hook(eng, h); });
+}
+
 // ═════════════════════════════════════════════
 //  Level 2 — Explicit Hook Type API
 // ═════════════════════════════════════════════
 
 template<typename Fn>
 [[nodiscard]] Result<Hook> inline_hook(Fn* target, Fn* detour,
+                                       Fn** original_out = nullptr,
+                                       config::Trampoline opts = {}) {
+    auto& eng = vanhooks::global_engine();
+    return detail::eng_hook_trampoline(&eng,
+        reinterpret_cast<void*>(target),
+        reinterpret_cast<void*>(detour),
+        reinterpret_cast<void**>(original_out),
+        opts.thread_safe, opts.tag)
+        .transform([&eng](HookHandle h) { return Hook(eng, h); });
+}
+
+// Address-based overload for inline_hook.
+template<typename Fn>
+[[nodiscard]] Result<Hook> inline_hook(uintptr_t target, Fn* detour,
                                        Fn** original_out = nullptr,
                                        config::Trampoline opts = {}) {
     auto& eng = vanhooks::global_engine();
