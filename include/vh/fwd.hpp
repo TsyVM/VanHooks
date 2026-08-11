@@ -11,6 +11,21 @@ namespace vh {
 class Hook;
 class Group;
 class HookRegistry;
+class Injection;
+enum class InjectMethod : unsigned char;
+
+namespace disasm {
+    enum class Arch : unsigned char;
+    enum class InsnKind : unsigned char;
+    struct Instruction;
+    class Disassembler;
+    struct RewriteResult;
+} // namespace disasm
+
+namespace symbols {
+    struct Symbol;
+    struct SourceLocation;
+} // namespace symbols
 
 namespace config {
     struct Trampoline;
@@ -19,6 +34,11 @@ namespace config {
     struct PLT;
     struct VTable;
     struct Mid;
+    struct Inject;
 } // namespace config
+
+namespace advanced {
+    class Engine;
+} // namespace advanced
 
 } // namespace vh

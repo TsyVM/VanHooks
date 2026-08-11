@@ -19,7 +19,7 @@
 
 namespace vh {
 
-// Internal bridge declarations.
+// Bridge declarations (implemented in vh_bridge.cpp, compiled into the library).
 namespace detail {
     void   engine_queue_enable (vanhooks::Engine*, vanhooks::HookHandle) ;
     void   engine_queue_disable(vanhooks::Engine*, vanhooks::HookHandle);

@@ -4,7 +4,9 @@
  * vh/config.hpp
  * Simplified, discoverable configuration structs under vh::config::.
  *
- * User-facing configuration structs for the vh:: API.
+ * These replace the verbose TrampolineOptions / IATOptions / PLTOptions /
+ * VTableOptions from vanhooks::. The old names are kept as deprecated aliases
+ * so all existing code continues to compile unchanged.
  */
 
 #include <string>

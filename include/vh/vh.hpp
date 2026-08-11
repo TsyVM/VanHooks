@@ -20,9 +20,22 @@
 #include "group.hpp"
 #include "advanced.hpp"
 
+// ── Disassembler (always available — Zydis is always linked) ────────────────
+#include "disasm.hpp"
+
 // ── Optional network layer ───────────────────────────────────────────────────
 #ifdef VH_NET_ENABLED
 #  include "net.hpp"
+#endif
+
+// ── Optional injection layer ─────────────────────────────────────────────────
+#ifdef VH_INJECT_ENABLED
+#  include "inject.hpp"
+#endif
+
+// ── Optional symbol resolution layer ─────────────────────────────────────────
+#ifdef VH_SYMBOLS_ENABLED
+#  include "symbols.hpp"
 #endif
 
 #include <vanhooks/vanhooks.hpp>
