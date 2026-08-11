@@ -79,3 +79,12 @@ struct Mid {
 };
 
 } // namespace vh::config
+
+// ─────────────────────────────────────────────
+//  Compatibility guard (fix #5)
+//  Verify that vh::config::Trampoline and vanhooks::TrampolineOptions remain
+//  size-compatible. If you add a field to one, add it to the other too.
+// ─────────────────────────────────────────────
+static_assert(sizeof(vh::config::Trampoline) == sizeof(vanhooks::TrampolineOptions),
+    "vh::config::Trampoline and vanhooks::TrampolineOptions have diverged — "
+    "keep them in sync or remove the deprecated TrampolineOptions.");

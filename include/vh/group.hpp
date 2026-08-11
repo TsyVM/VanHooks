@@ -9,7 +9,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
-#include <stdexcept>
+#include <functional>
 #include <mutex>
 #include <unordered_map>
 
@@ -204,10 +204,16 @@ public:
     Hook& operator[](size_t i)          { return hooks_.at(i); }
     const Hook& operator[](size_t i) const { return hooks_.at(i); }
 
-    Hook& at(std::string_view tag) {
+    Result<std::reference_wrapper<Hook>> at(std::string_view tag) {
         for (auto& h : hooks_)
-            if (h.tag() == tag) return h;
-        throw std::out_of_range(std::string("vh::Group::at: tag not found: ") + std::string(tag));
+            if (h.tag() == tag) return std::ref(h);
+        return std::unexpected(vanhooks::Error::HookNotFound);
+    }
+
+    Result<std::reference_wrapper<const Hook>> at(std::string_view tag) const {
+        for (const auto& h : hooks_)
+            if (h.tag() == tag) return std::cref(h);
+        return std::unexpected(vanhooks::Error::HookNotFound);
     }
 
     // ── Iterator support ──────────────────────────────────────────────────────
@@ -247,13 +253,29 @@ public:
 
     Group* find_group(std::string_view name) {
         std::lock_guard lock(mutex_);
-        auto it = groups_.find(std::string(name));
+        auto it = groups_.find(name);  // no allocation — transparent lookup
         return it != groups_.end() ? &it->second : nullptr;
     }
 
-    void enable_all()  { std::lock_guard lock(mutex_); for (auto& [k,g] : groups_) g.enable();     }
-    void disable_all() { std::lock_guard lock(mutex_); for (auto& [k,g] : groups_) g.disable();    }
-    void remove_all()  { std::lock_guard lock(mutex_); for (auto& [k,g] : groups_) g.remove_all(); groups_.clear(); }
+    // Fix #4: snapshot group pointers under the lock, then release before
+    // operating. Thread suspension (inside enable/disable/remove_all) must
+    // not happen while we hold the registry mutex — deadlock risk.
+    void enable_all() {
+        std::vector<Group*> ptrs;
+        { std::lock_guard lock(mutex_); ptrs.reserve(groups_.size()); for (auto& [k,g] : groups_) ptrs.push_back(&g); }
+        for (auto* g : ptrs) g->enable();
+    }
+    void disable_all() {
+        std::vector<Group*> ptrs;
+        { std::lock_guard lock(mutex_); ptrs.reserve(groups_.size()); for (auto& [k,g] : groups_) ptrs.push_back(&g); }
+        for (auto* g : ptrs) g->disable();
+    }
+    void remove_all() {
+        std::vector<Group*> ptrs;
+        { std::lock_guard lock(mutex_); ptrs.reserve(groups_.size()); for (auto& [k,g] : groups_) ptrs.push_back(&g); }
+        for (auto* g : ptrs) g->remove_all();
+        std::lock_guard lock(mutex_); groups_.clear();
+    }
 
     size_t total_hook_count() const {
         std::lock_guard lock(mutex_);
@@ -266,8 +288,16 @@ public:
 
 private:
     HookRegistry() = default;
-    mutable std::mutex                     mutex_;
-    std::unordered_map<std::string, Group> groups_;
+
+    // Transparent hasher: allows find(string_view) without allocating a std::string.
+    struct StringHash {
+        using is_transparent = void;
+        size_t operator()(std::string_view sv) const noexcept { return std::hash<std::string_view>{}(sv); }
+        size_t operator()(const std::string& s)  const noexcept { return std::hash<std::string>{}(s); }
+    };
+
+    mutable std::mutex mutex_;
+    std::unordered_map<std::string, Group, StringHash, std::equal_to<>> groups_;
 };
 
 } // namespace vh

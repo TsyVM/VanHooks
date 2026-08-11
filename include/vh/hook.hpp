@@ -11,6 +11,7 @@
 
 #include <string>
 #include <cstddef>
+#include <functional>
 
 #include <vanhooks/vanhooks.hpp>
 #include "result.hpp"
@@ -67,14 +68,20 @@ public:
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
-    Hook& enable() {
-        if (handle_.valid()) detail::hook_enable(engine_, handle_);
-        return *this;
+    Result<std::reference_wrapper<Hook>> enable() {
+        if (!handle_.valid())
+            return std::unexpected(vanhooks::Error::HookNotFound);
+        auto s = detail::hook_enable(engine_, handle_);
+        if (!s) return std::unexpected(s.error());
+        return std::ref(*this);
     }
 
-    Hook& disable() {
-        if (handle_.valid()) detail::hook_disable(engine_, handle_);
-        return *this;
+    Result<std::reference_wrapper<Hook>> disable() {
+        if (!handle_.valid())
+            return std::unexpected(vanhooks::Error::HookNotFound);
+        auto s = detail::hook_disable(engine_, handle_);
+        if (!s) return std::unexpected(s.error());
+        return std::ref(*this);
     }
 
     void remove() { do_remove(); }
