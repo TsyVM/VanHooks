@@ -874,24 +874,6 @@ writer.write(*pkt);
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
-## 🧩 Optional Modules
-
-All modules are compiled in by default. The ones below carry additional system dependencies and can be opted out.
-
-| Module | CMake flag | Header | Description |
-|---|---|---|---|
-| Pattern scanner | `VH_ENABLE_SCANNER` | always-on | IDA-style pattern scanner (BMH) |
-| Anti-debug | `VH_ENABLE_ANTIDEBUG` | always-on | 8-technique anti-debug detection |
-| VanTrace | `VH_ENABLE_TRACE` | `<vh/trace.hpp>` | Structured tracing layer |
-| Network | `VH_ENABLE_NET` | `<vh/net.hpp>` | Live capture / pcap (Npcap / libpcap) |
-| Symbol resolution | `VH_ENABLE_SYMBOLS` | `<vh/symbols.hpp>` | Function name / file / line (DbgHelp / libbacktrace) |
-| PE introspection | `VH_ENABLE_PE` | `<vh/pe.hpp>` | Sections, exports, imports, code caves |
-| Breakpoints | `VH_ENABLE_BREAKPOINT` | `<vh/breakpoint.hpp>` | SW (INT3/VEH) and HW (DR0–DR3) |
-| Call stack | `VH_ENABLE_CALLSTACK` | `<vh/callstack.hpp>` | `RtlCaptureStackBackTrace` / `backtrace()` |
-| Injection | `VH_ENABLE_INJECT` | `<vh/inject.hpp>` | LoadLibrary, ManualMap, ThreadHijack, ApcQueue |
-
-<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
-
 ## 🖥️ Platform Support
 
 | Feature | Windows x86 | Windows x64 | Linux x64 | Linux ARM64 | macOS x64 | macOS ARM64 |
