@@ -38,6 +38,21 @@
 #  include "symbols.hpp"
 #endif
 
+// ── Optional PE introspection layer ──────────────────────────────────────────
+#ifdef VH_PE_ENABLED
+#  include "pe.hpp"
+#endif
+
+// ── Optional breakpoint layer ─────────────────────────────────────────────────
+#ifdef VH_BREAKPOINT_ENABLED
+#  include "breakpoint.hpp"
+#endif
+
+// ── Optional callstack capture layer ─────────────────────────────────────────
+#ifdef VH_CALLSTACK_ENABLED
+#  include "callstack.hpp"
+#endif
+
 #include <vanhooks/vanhooks.hpp>
 
 #include <string_view>

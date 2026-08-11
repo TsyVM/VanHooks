@@ -37,6 +37,25 @@ namespace config {
     struct Inject;
 } // namespace config
 
+namespace pe {
+    struct Section;
+    struct Export;
+    struct Import;
+    struct CodeCave;
+    class  PeView;
+} // namespace pe
+
+namespace breakpoint {
+    class  Breakpoint;
+    enum class Action      : uint8_t;
+    enum class HwCondition : uint8_t;
+    enum class HwSize      : uint8_t;
+} // namespace breakpoint
+
+namespace callstack {
+    struct Frame;
+} // namespace callstack
+
 namespace advanced {
     class Engine;
 } // namespace advanced
