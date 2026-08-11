@@ -29,7 +29,7 @@
 
 VanHooks is a production-grade, cross-platform function hooking and instrumentation library for C++23. It provides inline trampoline hooks, import table hooks, procedure linkage table hooks, virtual function table hooks, and mid-function register-context hooks — all through a single unified API backed by `std::expected` error handling and RAII lifetime management.
 
-Beyond hooking, the library ships a complete instrumentation and stealth toolkit: a structured runtime tracing layer (**VanTrace**), a pattern scanner, disassembler, PE introspector (sections, exports, imports, code cave finder), software and hardware breakpoints, call stack capture, multi-technique anti-debug detection, four-method process injector, an integrity watchdog, and user-mode ETW/AMSI suppression — all enabled by default with **zero external dependencies beyond Zydis**. An optional symbol resolution layer and an optional network layer (**VanNet**, for live packet capture and protocol parsing) can be enabled when needed. Every feature uses the same `Result<T>` error model and the same `#include <vh/vh.hpp>` entry point.
+Beyond hooking, the library ships a complete instrumentation and stealth toolkit: a structured runtime tracing layer (**VanTrace**), a pattern scanner, disassembler, PE introspector (sections, exports, imports, code cave finder), software and hardware breakpoints, call stack capture, multi-technique anti-debug detection, four-method process injector, an integrity watchdog, and user-mode ETW/AMSI suppression — all enabled by default with **zero external dependencies beyond Zydis**. A built-in network layer (**VanNet**, for live packet capture and protocol parsing) ships alongside the core and is on by default when Npcap / libpcap is present. An optional symbol resolution layer can be enabled when needed. Every feature uses the same `Result<T>` error model and the same `#include <vh/vh.hpp>` entry point.
 
 <div align="center">
 
@@ -76,6 +76,7 @@ Beyond hooking, the library ships a complete instrumentation and stealth toolkit
 - **Five hook types** — Trampoline, IAT (`hook_iat` / `hook_iat_all`), PLT/GOT, VTable, Mid-function
 - **Three-level API** — beginner `vh::hook()`, fluent `vh::inline_hook()`, advanced `vh::Engine`
 - **VanTrace** — structured runtime event tracing with a lock-free ring buffer, pluggable sinks, cooperative and transparent attach modes, per-event timing, thread IDs, call depth, and raw context capture
+- **VanNet** — built-in packet capture and protocol parsing; live device capture, pcapng read/write, and a full layer-2–7 protocol stack
 - **Named groups & HookRegistry** — batch enable/disable/remove across DLL boundaries
 - **Batch queue** — `queue_enable` / `queue_disable` / `apply_queued` amortises thread-suspension overhead
 - **Hook chaining** — stack multiple detours on one target; each sees the previous one's trampoline
@@ -90,7 +91,6 @@ Beyond hooking, the library ships a complete instrumentation and stealth toolkit
 - **Pattern scanner** — IDA-style wildcard patterns with Boyer–Moore–Horspool acceleration
 - **Disassembler** — Zydis-backed length disassembler and instruction decoder (always available)
 - **Symbol resolution** — DbgHelp (Windows) / libbacktrace (POSIX) behind `VH_SYMBOLS_ENABLED`
-- **VanNet** — PcapPlusPlus-derived packet capture and protocol parsing behind `VH_NET_ENABLED`
 - **Thread-safe by default** — all hook installs suspend threads; IP fixup handles prologue races on remove
 - **`std::expected` throughout** — no exceptions, no raw OS error codes, no hidden failure paths
 
@@ -122,17 +122,17 @@ FetchContent_MakeAvailable(vanhooks)
 target_link_libraries(my_target PRIVATE vanhooks)
 ```
 
-Optional modules are controlled by CMake options:
+All core features — including VanTrace and VanNet — are compiled in by default. The few modules below that carry heavier system dependencies can be turned off explicitly if not needed:
 
 ```cmake
-# Enable optional layers (all off by default)
-set(VH_NET_ENABLED        ON)   # VanNet packet capture (requires Npcap/libpcap)
-set(VH_INJECT_ENABLED     ON)   # Process injection
-set(VH_SYMBOLS_ENABLED    ON)   # Symbol resolution (DbgHelp / libbacktrace)
-set(VH_PE_ENABLED         ON)   # PE introspection
-set(VH_BREAKPOINT_ENABLED ON)   # Software + hardware breakpoints
-set(VH_CALLSTACK_ENABLED  ON)   # Call stack capture
-set(VH_TRACE_ENABLED      ON)   # VanTrace structured hook instrumentation
+# Opt out of specific layers (all on by default)
+set(VH_ENABLE_NET         OFF)  # VanNet packet capture (requires Npcap/libpcap)
+set(VH_ENABLE_TRACE       OFF)  # VanTrace structured hook instrumentation
+set(VH_ENABLE_INJECT      OFF)  # Process injection
+set(VH_ENABLE_SYMBOLS     OFF)  # Symbol resolution (DbgHelp / libbacktrace)
+set(VH_ENABLE_PE          OFF)  # PE introspection
+set(VH_ENABLE_BREAKPOINT  OFF)  # Software + hardware breakpoints
+set(VH_ENABLE_CALLSTACK   OFF)  # Call stack capture
 ```
 
 ### Single include
@@ -454,7 +454,7 @@ for (auto& i : vh::disasm::decode_range(start, end)) {
 
 ## 💉 Process Injection
 
-Four injection methods are available, each with distinct stealth and compatibility trade-offs. Requires `VH_INJECT_ENABLED`.
+Four injection methods are available, each with distinct stealth and compatibility trade-offs.
 
 ```cpp
 #include <vh/inject.hpp>
@@ -526,7 +526,7 @@ if (sym) {
 
 ## 📄 PE Introspection
 
-Zero-copy in-process PE reader. Requires `VH_PE_ENABLED`.
+Zero-copy in-process PE reader.
 
 ```cpp
 #include <vh/pe.hpp>
@@ -544,7 +544,7 @@ auto caves = pe->find_caves(/*min_size=*/32, /*executable_only=*/true);
 
 ## 🔴 Breakpoints
 
-Software (INT3 / VEH) and hardware (DR0–DR3 / DR7) breakpoints with full RAII lifetime management. Requires `VH_BREAKPOINT_ENABLED`.
+Software (INT3 / VEH) and hardware (DR0–DR3 / DR7) breakpoints with full RAII lifetime management.
 
 ```cpp
 #include <vh/breakpoint.hpp>
@@ -567,8 +567,6 @@ auto hw = vanhooks::breakpoint::set_hardware(
 
 ## 📚 Call Stack Capture
 
-Requires `VH_CALLSTACK_ENABLED`.
-
 ```cpp
 #include <vh/callstack.hpp>
 
@@ -583,10 +581,8 @@ for (auto addr : frames.value_or({}))
 
 VanTrace is VanHooks' built-in structured tracing layer. It records hook enter/exit events into a lock-free ring buffer, drains them on a background consumer thread, and delivers them to any `ISink` implementation — with zero heap allocation per event and no synchronous I/O on the hook hot path.
 
-Requires `VH_TRACE_ENABLED`.
-
 ```cpp
-#include <vh/trace.hpp>   // or <vh/vh.hpp> with VH_TRACE_ENABLED
+#include <vh/trace.hpp>   // or <vh/vh.hpp>
 ```
 
 ### Quick start
@@ -748,7 +744,7 @@ printf("produced=%llu  consumed=%llu  dropped=%llu  overflows=%llu\n",
 
 ## 🌐 VanNet — Built-in Network Layer
 
-Optional packet capture and protocol parsing layer. Requires `VH_NET_ENABLED` and an installed Npcap / libpcap.
+VanNet is VanHooks' built-in packet capture and protocol parsing layer. It ships alongside the core and is compiled in by default when Npcap / libpcap is present on the host. Disable with `VH_ENABLE_NET=OFF` if it is not needed.
 
 ```cpp
 #include <vh/net.hpp>
@@ -770,17 +766,15 @@ while (auto pkt = reader->next_packet()) { /* ... */ }
 
 ## 🧩 Optional Modules
 
+The modules below carry external system dependencies and are therefore opt-out rather than always-on. All other features — including VanTrace and VanNet — compile in unconditionally.
+
 | Module | CMake flag | Header | Description |
 |---|---|---|---|
-| Symbol resolution | `VH_SYMBOLS_ENABLED` | `<vh/symbols.hpp>` | Function name / file / line annotation |
-| PE introspection | `VH_PE_ENABLED` | `<vh/pe.hpp>` | Sections, exports, imports, code caves |
-| Breakpoints | `VH_BREAKPOINT_ENABLED` | `<vh/breakpoint.hpp>` | SW (INT3/VEH) and HW (DR0–DR3) |
-| Call stack | `VH_CALLSTACK_ENABLED` | `<vh/callstack.hpp>` | `RtlCaptureStackBackTrace` / `backtrace()` |
-| Injection | `VH_INJECT_ENABLED` | `<vh/inject.hpp>` | LoadLibrary, ManualMap, ThreadHijack, ApcQueue |
-| VanTrace | `VH_TRACE_ENABLED` | `<vh/trace.hpp>` | Structured hook event tracing, ring buffer, sinks |
-| VanNet | `VH_NET_ENABLED` | `<vh/net.hpp>` | Packet capture + protocol parsing |
-
-All of the above are off by default. The always-on core (hooking, scanner, disassembler, antidebug) has **zero dependencies beyond Zydis**.
+| Symbol resolution | `VH_ENABLE_SYMBOLS` | `<vh/symbols.hpp>` | Function name / file / line annotation (DbgHelp / libbacktrace) |
+| PE introspection | `VH_ENABLE_PE` | `<vh/pe.hpp>` | Sections, exports, imports, code caves |
+| Breakpoints | `VH_ENABLE_BREAKPOINT` | `<vh/breakpoint.hpp>` | SW (INT3/VEH) and HW (DR0–DR3) |
+| Call stack | `VH_ENABLE_CALLSTACK` | `<vh/callstack.hpp>` | `RtlCaptureStackBackTrace` / `backtrace()` |
+| Injection | `VH_ENABLE_INJECT` | `<vh/inject.hpp>` | LoadLibrary, ManualMap, ThreadHijack, ApcQueue |
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
