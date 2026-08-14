@@ -10,7 +10,7 @@
 
 <br/>
 
-One include. Everything in this document lives in the `vh::` namespace unless stated otherwise.
+VanHooks is distributed as **precompiled static libraries with public API headers**. Everything documented here is available through those headers and the matching `.lib`. One include, all platforms.
 
 ```cpp
 #include <vh/vh.hpp>
@@ -20,7 +20,7 @@ One include. Everything in this document lives in the `vh::` namespace unless st
 
 ## Contents
 
-[Glossary](#glossary) · [Result Type](#result-type) · [Level 1 API](#level-1-api) · [Level 2 API](#level-2-api) · [Hook Object](#hook-object) · [Group](#group) · [HookRegistry](#hookregistry) · [Config Structs](#config-structs) · [Error Codes](#error-codes) · [Pattern Scanner](#pattern-scanner) · [Anti-Debug Detection](#anti-debug-detection) · [Disassembler](#disassembler) · [Process Injection](#process-injection) · [Symbol Resolution](#symbol-resolution) · [PE Introspection](#pe-introspection) · [Breakpoints](#breakpoints) · [Call Stack Capture](#call-stack-capture) · [VanTrace](#vantrace) · [Network API](#network-api) · [Quick Reference](#quick-reference)
+[Glossary](#glossary) · [Result Type](#result-type) · [Level 1 API](#level-1-api) · [Level 2 API](#level-2-api) · [Hook Object](#hook-object) · [Group](#group) · [HookRegistry](#hookregistry) · [Config Structs](#config-structs) · [Engine Access](#engine-access) · [Error Codes](#error-codes) · [Pattern Scanner](#pattern-scanner) · [Anti-Debug Detection](#anti-debug-detection) · [Disassembler](#disassembler) · [Process Injection](#process-injection) · [Symbol Resolution](#symbol-resolution) · [PE Introspection](#pe-introspection) · [Breakpoints](#breakpoints) · [Call Stack Capture](#call-stack-capture) · [VanTrace](#vantrace) · [Network API](#network-api) · [Quick Reference](#quick-reference)
 
 ---
 
@@ -183,12 +183,14 @@ Result<Hook> vh::vtable_hook(void** vtable,
                              config::VTable opts = {});
 ```
 
-Patches a single slot in a C++ virtual function table. Slots are zero-indexed in declaration order.
+Patches a single slot in a C++ virtual function table. Slots are zero-indexed in declaration order. The `original_out` parameter is accepted for API consistency but VTable hooks do not produce a callable trampoline stub — the original slot value is stored internally and restored on remove. To call the original implementation, hold your own copy of the vtable pointer before installing the hook.
 
 ```cpp
 void** vtbl = *reinterpret_cast<void***>(swap_chain);
 
-static HRESULT (STDMETHODCALLTYPE *orig_Present)(IDXGISwapChain*, UINT, UINT) = nullptr;
+// Save original before hooking if you need to call through
+static HRESULT (STDMETHODCALLTYPE *orig_Present)(IDXGISwapChain*, UINT, UINT) =
+    reinterpret_cast<decltype(orig_Present)>(vtbl[8]);
 
 HRESULT STDMETHODCALLTYPE hk_Present(IDXGISwapChain* sc, UINT sync, UINT flags) {
     return orig_Present(sc, sync, flags);
@@ -196,7 +198,7 @@ HRESULT STDMETHODCALLTYPE hk_Present(IDXGISwapChain* sc, UINT sync, UINT flags) 
 
 auto r = vh::vtable_hook(vtbl, 8,
                          (void*)&hk_Present,
-                         (void**)&orig_Present,
+                         nullptr,
                          { .tag = "DXGI.Present" });
 ```
 
@@ -292,15 +294,8 @@ Patches the 32-bit relative displacement of a **single** `CALL` (E8) or `JMP` (E
 | What is patched | Target function prologue | Displacement at one `CALL`/`JMP` site |
 | Callers affected | All callers | Only the one patched site |
 | Original reachable via | Trampoline stub | Resolved original absolute address |
+| ARM64 | ✓ | Returns `Error::Unsupported` |
 | Typical use | General API interception | Game-modding one-off patches |
-
-**Platform behaviour:**
-
-| Platform | Behaviour |
-|---|---|
-| x86 (32-bit Windows) | Full support. rel32 covers the entire 4 GB address space. |
-| x64 (64-bit Windows) | Supported. Returns `Error::TrampolineNoSpace` if `&detour` is outside ±2 GB of the call site. |
-| ARM64 | Returns `Error::Unsupported`. |
 
 ```cpp
 using PFN = int(__cdecl*)(int);
@@ -324,7 +319,7 @@ Options: [`vanhooks::CallSiteOptions`](#vanhookscallsiteoptions).
 
 ### Return hooks — Engine API (x64 only)
 
-`hook_mid_return()` captures a function's return value before the caller sees it. Internally installs an entry thunk and a shared return stub tracked under one `HookHandle`. Returns `Error::Unsupported` on ARM64 and x86.
+`hook_mid_return()` captures a function's return value before the caller sees it. Returns `Error::Unsupported` on ARM64 and x86.
 
 ```cpp
 auto& eng = vanhooks::global_engine();
@@ -619,7 +614,7 @@ struct CallSiteOptions {
 };
 ```
 
-Controls thread safety and labelling for `vh::callsite_hook()` and `Group::hook_callsite()`. `thread_safe = true` (default) suspends all threads during the 4-byte displacement write, consistent with the behaviour of all other hook types.
+Controls thread safety and labelling for `vh::callsite_hook()` and `Group::hook_callsite()`.
 
 ### `config::Inject`
 
@@ -630,28 +625,30 @@ struct Inject {
 };
 ```
 
-### `Engine::Config`
+---
+
+## Engine Access
+
+The global `Engine` is accessible at any time through `vanhooks::global_engine()` and the `vh::advanced::engine()` alias. It handles trampoline pools, thread suspension, and the hook registry internally.
 
 ```cpp
-vanhooks::Engine::Config cfg;
-cfg.allocator                  = nullptr;  // custom IAllocator; null = default
-cfg.trampoline_pool_size       = 65536;    // bytes per pool slab
-cfg.auto_flush_icache          = true;
-cfg.enable_integrity_watchdog  = false;
-cfg.watchdog_interval_ms       = 500;
-cfg.suppress_etw               = false;    // Windows only
-cfg.suppress_amsi              = false;    // Windows only
+auto& eng = vanhooks::global_engine();   // or vh::advanced::engine()
+
+// Queue multiple operations and apply in one thread-suspension window
+eng.queue_enable(h1.handle());
+eng.queue_disable(h2.handle());
+eng.apply_queued();
+
+// Return hook (x64 only)
+eng.hook_mid_return(&target, 0, nullptr, [](vanhooks::ReturnContext* ctx) noexcept {
+    ctx->retval_rax = 0;
+});
+
+// Chain a second detour onto an existing hook
+eng.chain(h1.handle(), (void*)&second_detour, (void**)&orig_for_second);
 ```
 
-| Field | Default | Description |
-|---|---|---|
-| `allocator` | `nullptr` | Custom trampoline allocator. `nullptr` = default near-target. |
-| `trampoline_pool_size` | `65536` | Bytes per pool slab. |
-| `auto_flush_icache` | `true` | Flush instruction cache after each patch. |
-| `enable_integrity_watchdog` | `false` | Start background integrity watchdog thread. |
-| `watchdog_interval_ms` | `500` | Watchdog poll interval. |
-| `suppress_etw` | `false` | Patch `EtwEventWrite` / `EtwEventWriteFull`. Windows only. |
-| `suppress_amsi` | `false` | Patch `AmsiScanBuffer` / `AmsiScanString`. Windows only. |
+The precompiled SDK exposes the global engine and all hook operations. Full `Engine::Config` control — custom allocators, independent engine instances, watchdog interval, ETW/AMSI suppression flags — is available via a [source license](https://www.teamvanilla.org/).
 
 ---
 
@@ -734,7 +731,7 @@ All codes are `vh::Error` values. Use `vh::error_to_string(e)` for the name.
 
 ## Pattern Scanner
 
-All in `vanhooks::scanner::`. Enabled by default (`VH_ENABLE_SCANNER=ON`).
+All in `vanhooks::scanner::`.
 
 ### `scan_process` — process-wide (Windows)
 
@@ -780,7 +777,7 @@ Result<Pattern> vanhooks::scanner::parse_pattern(std::string_view input);
 
 ## Anti-Debug Detection
 
-All in `vanhooks::antidebug::`. Enabled by default (`VH_ENABLE_ANTIDEBUG=ON`).
+All in `vanhooks::antidebug::`.
 
 ### `check_all`
 
@@ -799,7 +796,9 @@ for (auto& f : report.findings)
         f.technique.c_str(), f.detail.c_str());
 ```
 
-### Techniques (Windows — 8 total)
+### Techniques
+
+**Windows (8 techniques):**
 
 | Technique | Method |
 |---|---|
@@ -812,7 +811,7 @@ for (auto& f : report.findings)
 | `TimingCheck` | Loop duration >50 ms |
 | `DebuggerProcessList` | Process snapshot vs known tool names |
 
-On **Linux**: `ptrace(PTRACE_TRACEME)`.
+**Linux:** `ptrace(PTRACE_TRACEME)`.
 
 Individual checks also available: `check_is_debugger_present()`, `check_remote_debugger()`, `check_debug_port()`, `check_heap_flags()`, `check_nt_global_flag()`, `check_close_handle_exception()`, `check_timing()`, `check_debugger_processes()`.
 
@@ -848,13 +847,11 @@ puts(vh::disasm::format_listing(insns).c_str());
 
 **`InsnKind` values:** `Generic`, `Call`, `Jump`, `JumpConditional`, `Return`, `Nop`, `RipRelative`, `PcRelative`, `Privileged`.
 
-**Architecture:** x86/x64 use Zydis; ARM64 uses a fixed-width 4-byte internal decoder. Auto-detected from the running CPU; pass an explicit `vh::disasm::Arch` to override.
-
 ---
 
 ## Process Injection
 
-**Windows only. Requires `VH_INJECT_ENABLED` (`VH_ENABLE_INJECT=ON`, default).**
+**Windows only.**
 
 ```cpp
 #include <vh/inject.hpp>
@@ -887,7 +884,7 @@ vh::eject(*inj2);
 
 ## Symbol Resolution
 
-**Requires `VH_SYMBOLS_ENABLED` (`VH_ENABLE_SYMBOLS=ON`, default). DbgHelp (Windows) / `dladdr` + libbacktrace (POSIX).**
+**Requires `VH_SYMBOLS_ENABLED`. DbgHelp (Windows) / `dladdr` + libbacktrace (POSIX).**
 
 ```cpp
 #include <vh/symbols.hpp>
@@ -924,7 +921,7 @@ auto name = vh::symbols::demangle(raw_name);
 
 ## PE Introspection
 
-**Windows only. Requires `VH_PE_ENABLED` (`VH_ENABLE_PE=ON`, default).**
+**Windows only.**
 
 ```cpp
 #include <vh/pe.hpp>
@@ -968,7 +965,7 @@ for (auto& m : vh::pe::modules().value_or({}))
 
 ## Breakpoints
 
-**Requires `VH_BREAKPOINT_ENABLED` (`VH_ENABLE_BREAKPOINT=ON`, default).**
+**Requires `VH_BREAKPOINT_ENABLED`.**
 
 ```cpp
 #include <vh/breakpoint.hpp>
@@ -999,7 +996,7 @@ hw->apply_to_new_thread(new_thread_handle);
 
 ## Call Stack Capture
 
-**Requires `VH_CALLSTACK_ENABLED` (`VH_ENABLE_CALLSTACK=ON`, default).**
+**Requires `VH_CALLSTACK_ENABLED`.**
 
 ```cpp
 #include <vh/callstack.hpp>
@@ -1020,7 +1017,7 @@ if (ann) puts(vh::callstack::format(*ann).c_str());
 
 ## VanTrace
 
-Structured runtime event tracing. Lock-free ring buffer, background consumer, pluggable sinks. **Requires `VH_TRACE_ENABLED` (`VH_ENABLE_TRACE=ON`, default).**
+Structured runtime event tracing. Lock-free ring buffer, background consumer, pluggable sinks. **Requires `VH_TRACE_ENABLED`.**
 
 ```cpp
 #include <vh/trace.hpp>   // or <vh/vh.hpp> with VH_TRACE_ENABLED
@@ -1065,14 +1062,14 @@ tracer.set_sink(sink);
 
 ### Attaching hooks
 
-`vh::Tracer::attach()` accepts a `vh::Hook` directly, plus an optional tag override. `AttachMode` is available at the `vanhooks::trace::Tracer` level for transparent auto-instrumentation; the `vh::Tracer` wrapper exposes the common cooperative path.
+`vh::Tracer::attach()` accepts a `vh::Hook` directly, plus an optional tag override. Cooperative mode requires the detour to call `enter()` / `exit()` (or use `CallScope`) manually. Transparent auto-instrumentation is also available through `tracer.inner()` and `AttachMode`.
 
 ```cpp
-// Attach (cooperative — detour calls enter/exit manually)
+// Cooperative attach
 auto h = vh::hook("d3d9.dll", "EndScene", &hk_EndScene, &orig_EndScene).value();
 static vh::AttachedHook g_hook = tracer.attach(h, "d3d9.EndScene").value();
 
-// Access the underlying tracer for transparent mode
+// Transparent attach (auto-instruments entry + exit; x64, degrades gracefully)
 tracer.inner().attach(h.engine(), h.handle(), "d3d9.EndScene",
                       vanhooks::trace::AttachMode::Transparent);
 ```
@@ -1144,7 +1141,7 @@ tracer.set_filter(f);
 ### Configuration
 
 ```cpp
-vanhooks::trace::TracerConfig cfg;
+vh::TraceConfig cfg;
 cfg.ring_capacity    = 8192;  // must be power of two; default 4096
 cfg.overflow_policy  = vanhooks::trace::OverflowPolicy::BlockNewer; // or DropOldest
 cfg.enable_timing    = true;
@@ -1220,7 +1217,7 @@ tracer.set_sink(std::make_shared<BinaryFileSink>("vantrace.bin"));
 
 ## Network API
 
-Requires `VH_NET_ENABLED` (`VH_ENABLE_NET=ON`, default) and Npcap / libpcap. Types in `vh::net::`.
+Requires Npcap (Windows) / libpcap (POSIX). Types in `vh::net::`.
 
 ### Devices
 
@@ -1303,7 +1300,7 @@ vh::hook(0x5D5DB0u, &det, &orig)
 vh::inline_hook(&fn,        &det, &orig, { .tag = "x" })
 vh::inline_hook(0x5D5DB0u, &det, &orig, { .tag = "x" })
 vh::api_hook    ("mod", "sym", &det, &orig, { .tag = "x" })
-vh::vtable_hook (vtbl,  slot,  det,   orig,  { .tag = "x" })
+vh::vtable_hook (vtbl,  slot,  det,   nullptr, { .tag = "x" })
 vh::iat_hook    ("Sym", det,  { .module_name = "m.exe" })
 vh::iat_hook_all("Sym", det)
 vh::plt_hook    ("lib", "sym", det)
@@ -1360,6 +1357,16 @@ for (auto& h : g) { ... }
 g.queue_enable().apply();
 ```
 
+**Engine access**
+```cpp
+auto& eng = vanhooks::global_engine();   // or vh::advanced::engine()
+eng.queue_enable(h.handle());
+eng.queue_disable(h.handle());
+eng.apply_queued();
+eng.hook_mid_return(ptr, 0, enter_cb, return_cb);  // x64 only
+eng.chain(h.handle(), (void*)&det2, (void**)&orig2);
+```
+
 **VanTrace**
 ```cpp
 vh::Tracer tracer(cfg);           // TraceConfig optional
@@ -1369,7 +1376,7 @@ tracer.start();
 
 tracer.attach(h)                  // cooperative (default)
 tracer.attach(h, "tag")           // with tag override
-// Transparent mode via inner tracer:
+// Transparent mode:
 tracer.inner().attach(eng, handle, "tag", vanhooks::trace::AttachMode::Transparent)
 
 // Inside cooperative detour
@@ -1408,7 +1415,7 @@ vh::disasm::rewrite(insns, old_va, new_va);
 vh::disasm::format_listing(insns);
 ```
 
-**Injection (Windows, VH_ENABLE_INJECT=ON)**
+**Injection (Windows)**
 ```cpp
 vh::inject(pid, "payload.dll", { .method = vh::InjectMethod::ManualMap });
 vh::inject_from_memory(pid, pe_bytes, { .method = vh::InjectMethod::ThreadHijack });
@@ -1416,7 +1423,7 @@ inj->eject();
 vh::eject(*inj);
 ```
 
-**Symbols (VH_ENABLE_SYMBOLS=ON)**
+**Symbols**
 ```cpp
 vh::symbols::initialize();
 vh::symbols::resolve(address);
@@ -1427,7 +1434,7 @@ vh::symbols::current_stack();
 vh::symbols::demangle(raw_name);
 ```
 
-**PE (Windows, VH_ENABLE_PE=ON)**
+**PE (Windows)**
 ```cpp
 auto pe = vh::pe::open("ntdll.dll");
 auto pe = vh::pe::open_at(base_va);
@@ -1437,21 +1444,21 @@ pe->find_caves(32, true);
 vh::pe::modules();
 ```
 
-**Breakpoints (VH_ENABLE_BREAKPOINT=ON)**
+**Breakpoints**
 ```cpp
 vh::breakpoint::set_software(addr, cb);
 vh::breakpoint::set_hardware(addr, HwCondition::Write, HwSize::Dword, cb);
 bp->remove();    bp->active();    bp->apply_to_new_thread(h);
 ```
 
-**Call stack (VH_ENABLE_CALLSTACK=ON)**
+**Call stack**
 ```cpp
 vh::callstack::capture(2, 32);
 vh::callstack::capture_annotated();
 vh::callstack::format(frames);
 ```
 
-**Network (VH_ENABLE_NET=ON)**
+**Network**
 ```cpp
 vh::net::devices();
 auto cap = vh::net::Capture::open("eth0").value();
