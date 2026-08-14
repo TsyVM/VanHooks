@@ -32,6 +32,7 @@ One include. Everything in this document lives in the `vh::` namespace unless st
 | **Target** | The function or address being intercepted. |
 | **Detour** | Your replacement function. Must match the target's calling convention and signature exactly. |
 | **Original** | A function pointer VanHooks fills in so your detour can call through to the real function. |
+| **Call Site** | A single `CALL` (E8) or `JMP` (E9) instruction in the caller's code. A CallSite hook patches only this one instruction's displacement, leaving the target function's prologue untouched. |
 | **Enable** | Activate a hook so calls to the target go to the detour. Default state when created. |
 | **Disable** | Deactivate a hook without removing it. Target behaves as unhooked; the object remains valid. |
 | **Remove** | Permanently uninstall a hook and release all resources. The `Hook` destructor does this automatically. |
@@ -264,6 +265,63 @@ auto r = vh::mid_hook(&game_update,
     { .offset = 0x1C, .tag = "Game.HealthReadback" });
 ```
 
+### `vh::callsite_hook`
+
+```cpp
+// Address-based — primary API for pattern-scanned or version-table addresses
+template<typename Detour>
+Result<Hook> vh::callsite_hook(uintptr_t         site_addr,
+                               Detour*           detour,
+                               auto*             orig,
+                               vanhooks::CallSiteOptions opts = {});
+
+// Function-pointer overload — for typed call sites known at compile time
+template<typename Fn>
+Result<Hook> vh::callsite_hook(Fn*  site_addr,
+                               Fn*  detour,
+                               Fn** orig = nullptr,
+                               vanhooks::CallSiteOptions opts = {});
+```
+
+Patches the 32-bit relative displacement of a **single** `CALL` (E8) or `JMP` (E9) instruction at `site_addr`, redirecting only that one call site to `detour`. Every other caller of the same function is unaffected. `*orig` is written with the resolved absolute address of the original target, callable directly.
+
+**When to prefer CallSite over Trampoline:**
+
+| | Trampoline | CallSite |
+|---|---|---|
+| What is patched | Target function prologue | Displacement at one `CALL`/`JMP` site |
+| Callers affected | All callers | Only the one patched site |
+| Original reachable via | Trampoline stub | Resolved original absolute address |
+| Typical use | General API interception | Game-modding one-off patches |
+
+**Platform behaviour:**
+
+| Platform | Behaviour |
+|---|---|
+| x86 (32-bit Windows) | Full support. rel32 covers the entire 4 GB address space. |
+| x64 (64-bit Windows) | Supported. Returns `Error::TrampolineNoSpace` if `&detour` is outside ±2 GB of the call site. |
+| ARM64 | Returns `Error::Unsupported`. |
+
+```cpp
+using PFN = int(__cdecl*)(int);
+PFN g_orig = nullptr;
+
+int my_detour(int x) {
+    printf("intercepted: %d\n", x);
+    return g_orig(x);   // call through to original
+}
+
+// Hook a specific CALL site found by pattern scan
+auto addr = vanhooks::scanner::scan_process("E8 ? ? ? ? 83 C4 04").value()[0];
+auto h = vh::callsite_hook(addr, &my_detour, &g_orig,
+                           { .tag = "Game.SpeedCall" });
+
+// Function-pointer form
+auto h2 = vh::callsite_hook(&known_call_site, &my_detour, &g_orig);
+```
+
+Options: [`vanhooks::CallSiteOptions`](#vanhookscallsiteoptions).
+
 ### Return hooks — Engine API (x64 only)
 
 `hook_mid_return()` captures a function's return value before the caller sees it. Internally installs an entry thunk and a shared return stub tracked under one `HookHandle`. Returns `Error::Unsupported` on ARM64 and x86.
@@ -323,9 +381,9 @@ Inserts a detour in front of an existing hook. Remove links before base hooks �
 | `enabled()` | `bool` | Hook is currently active. |
 | `tag()` | `std::string` | Label set at creation, or empty. |
 | `kind()` | `HookKind` | Which hook type this is. |
-| `target()` | `void*` | Address of the original function. |
+| `target()` | `void*` | Address of the original function (or call site for CallSite hooks). |
 | `detour()` | `void*` | Address of the replacement function. |
-| `trampoline()` | `void*` | Call-through trampoline. `nullptr` for IAT/PLT/VTable. |
+| `trampoline()` | `void*` | Call-through trampoline. `nullptr` for IAT/PLT/VTable/CallSite. |
 | `handle()` | `HookHandle` | Raw handle for Engine interop. |
 | `engine()` | `Engine&` | Reference to the owning engine. |
 
@@ -366,6 +424,35 @@ grp.hook_at(addr, &MyDetour, nullptr, { .tag = "my_hook" });
 ```
 
 Failed installs are silently dropped and do not invalidate the chain. Use `add(vh::inline_hook(…))` directly when you need failure visibility.
+
+### CallSite install
+
+```cpp
+// Patch one CALL/JMP site by address
+template<typename Detour>
+Group& hook_callsite(uintptr_t site_addr, Detour* detour, auto* orig,
+                     vanhooks::CallSiteOptions opts = {});
+
+// Scan for a pattern, advance by byte_offset, patch the found CALL/JMP site
+template<typename Detour>
+Group& hook_callsite_pattern(std::string_view pattern, ptrdiff_t byte_offset,
+                              Detour* detour, auto* orig,
+                              vanhooks::CallSiteOptions opts = {});
+```
+
+`hook_callsite_pattern` is a no-op (not an error) when the pattern is not found, mirroring `hook_pattern` behaviour. Failed installs are silently dropped; use `add(vh::callsite_hook(…))` directly for failure visibility.
+
+```cpp
+// Direct address
+grp.hook_callsite(0x12AB34u, &MyDetour, &g_orig);
+grp.hook_callsite(0x12AB34u, &MyDetour, &g_orig, { .tag = "NFS.SpeedCall" });
+
+// Pattern scan — finds "E8 ? ? ? ? 83 C4 04", treats byte 0 as the E8 site
+grp.hook_callsite_pattern("E8 ? ? ? ? 83 C4 04", 0, &MyDetour, &g_orig);
+
+// Advance past a preceding instruction to land on the E8 byte
+grp.hook_callsite_pattern("89 04 24 E8 ? ? ? ?", 3, &MyDetour, &g_orig);
+```
 
 ### Pattern-scan hook
 
@@ -523,6 +610,17 @@ struct Mid {
 };
 ```
 
+### `vanhooks::CallSiteOptions`
+
+```cpp
+struct CallSiteOptions {
+    bool        thread_safe = true;  // suspend threads during patch window
+    std::string tag;                 // forwarded to Hook for VanTrace / registry lookup
+};
+```
+
+Controls thread safety and labelling for `vh::callsite_hook()` and `Group::hook_callsite()`. `thread_safe = true` (default) suspends all threads during the 4-byte displacement write, consistent with the behaviour of all other hook types.
+
 ### `config::Inject`
 
 ```cpp
@@ -569,9 +667,10 @@ All codes are `vh::Error` values. Use `vh::error_to_string(e)` for the name.
 | `NotInitialized` | Engine not initialised. |
 | `AlreadyInitialized` | Initialisation attempted twice. |
 | `InvalidArgument` | Null pointer or out-of-range value. |
-| `Unsupported` | Operation not supported on this platform or architecture. |
+| `Unsupported` | Operation not supported on this platform or architecture (e.g. CallSite on ARM64). |
 | `OutOfRange` | Index or offset outside valid bounds. |
 | `OsError` | OS call failed. |
+| `InvalidAddress` | Byte at the given address is not the expected opcode (e.g. not E8/E9 for a CallSite hook). |
 
 ### Memory
 
@@ -581,7 +680,7 @@ All codes are `vh::Error` values. Use `vh::error_to_string(e)` for the name.
 | `MemoryProtectFailed` | Could not change memory protection. |
 | `MemoryReadFailed` | Could not read from target address. |
 | `MemoryWriteFailed` | Could not write patch bytes. |
-| `TrampolineNoSpace` | Prologue too short. Consider IAT/PLT. |
+| `TrampolineNoSpace` | Prologue too short to steal bytes, or (on x64 CallSite) `&detour` is outside ±2 GB of the call site. |
 
 ### Hook lifecycle
 
@@ -978,6 +1077,8 @@ tracer.inner().attach(h.engine(), h.handle(), "d3d9.EndScene",
                       vanhooks::trace::AttachMode::Transparent);
 ```
 
+CallSite hooks attach and trace identically to other hook types — `hook_kind` in the resulting `TraceEvent` will be `HookKind::CallSite`.
+
 ### Cooperative usage — `CallScope`
 
 ```cpp
@@ -1032,7 +1133,7 @@ Pre-buffer gate — events that fail the filter never enter the ring:
 ```cpp
 vh::TraceFilter f;
 f.include_handles  = { h1.handle(), h2.handle() }; // only these hooks (empty = all)
-f.include_kinds    = { vanhooks::HookKind::Trampoline };
+f.include_kinds    = { vanhooks::HookKind::CallSite };
 f.include_threads  = { GetCurrentThreadId() };
 f.min_duration     = std::chrono::microseconds(100); // HookExit >=100 µs
 f.sample_every_n   = 10;                             // every 10th call per hook
@@ -1063,7 +1164,7 @@ vh::Tracer tracer(cfg);
 | Field | Type | Description |
 |---|---|---|
 | `kind` | `TraceEventKind` | `HookEnter`, `HookExit`, `TraceDropped` |
-| `hook_kind` | `HookKind` | Trampoline / IAT / PLT / VTable / Mid |
+| `hook_kind` | `HookKind` | Trampoline / IAT / PLT / VTable / Mid / CallSite |
 | `hook_id` | `uint64_t` | Matches `HookHandle::id` |
 | `thread_id` | `uint32_t` | OS thread ID |
 | `timestamp` | `TimePoint` | Monotonic clock point |
@@ -1208,6 +1309,12 @@ vh::iat_hook_all("Sym", det)
 vh::plt_hook    ("lib", "sym", det)
 vh::mid_hook    (ptr,   cb,   { .offset = 0x1C })
 
+// CallSite — address-based (primary)
+vh::callsite_hook(0x12AB34u, &det, &orig)
+vh::callsite_hook(0x12AB34u, &det, &orig, { .tag = "x" })
+// CallSite — function-pointer overload
+vh::callsite_hook(&site_fn, &det, &orig)
+
 // Return hook — Engine API (x64 only)
 vanhooks::global_engine().hook_mid_return(ptr, 0, enter_cb, return_cb)
 ```
@@ -1227,11 +1334,19 @@ h.chain(&det2, &orig2, "tag")
 auto g = vh::group("Name");
 g.add(vh::hook(...)).add(vh::vtable_hook(...));
 
-// Address-based
+// Address-based trampoline
 g.hook_at(0x5D5DB0u, &det);
 g.hook_at(0x5D5DB0u, &det, &orig, { .tag = "x" });
 
-// Pattern-scan hook
+// CallSite — direct address
+g.hook_callsite(0x12AB34u, &det, &orig);
+g.hook_callsite(0x12AB34u, &det, &orig, { .tag = "x" });
+
+// CallSite — pattern scan
+g.hook_callsite_pattern("E8 ? ? ? ? 83 C4 04", 0,  &det, &orig);
+g.hook_callsite_pattern("89 04 24 E8 ? ? ? ?",  3,  &det, &orig);
+
+// Trampoline pattern scan
 g.hook_pattern("E8 ? ? ? ? 83 C4 04", -5, &det);
 
 // Memory patches
