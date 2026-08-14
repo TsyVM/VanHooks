@@ -31,53 +31,19 @@ VanHooks is a production-grade C++23 function hooking and instrumentation librar
 
 Beyond hooking, it ships a complete instrumentation and stealth toolkit: **VanTrace** (structured runtime tracing), **VanNet** (live packet capture), a pattern scanner, disassembler, PE introspector, software and hardware breakpoints, call stack capture, anti-debug detection, process injection, integrity watchdog, and ETW/AMSI suppression — all behind `#include <vh/vh.hpp>`.
 
-> **VanHooks ships as precompiled static libraries with public headers. Source is not publicly available.**
+VanHooks is distributed as **precompiled static libraries with public API headers**. Drop the headers and the matching `.lib` into your project and link — no build system integration or source compilation required.
 
 <div align="center">
 
 ### 📑 Contents
 
-[Why VanHooks](#-why-vanhooks) · [Features](#-features-at-a-glance) · [Requirements](#️-requirements) · [Installation](#-installation) · [Quick Start](#-quick-start)
+[Features](#-features-at-a-glance) · [Requirements](#️-requirements) · [Installation](#-installation) · [Quick Start](#-quick-start)
 
 [Hook Types](#-hook-types) · [Lifetime & RAII](#️-hook-lifetime--raii) · [Groups](#️-groups--batch-lifecycle-management) · [Chaining](#-hook-chaining) · [Error Handling](#-error-handling) · [HookRegistry](#️-multi-module-projects--hookregistry)
 
 [Scanner](#-pattern-scanner) · [Anti-Debug](#-anti-debug-detection) · [Disassembler](#-disassembler) · [Injection](#-process-injection) · [Stealth](#-stealth-configuration) · [Watchdog](#-integrity-watchdog) · [Symbols](#-symbol-resolution) · [PE Introspection](#-pe-introspection) · [Breakpoints](#-breakpoints) · [Call Stack](#-call-stack-capture)
 
-[VanTrace](#-vantrace--structured-hook-instrumentation) · [VanNet](#-vannet--built-in-network-layer) · [Platform Support](#️-platform-support) · [FAQ](#-faq) · [Docs](#-documentation)
-
-</div>
-
-<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
-
-## 🩸 Why VanHooks?
-
-<div align="center">
-
-| | MinHook | EasyHook | SafetyHook | PolyHook2 | **VanHooks** |
-|---|:---:|:---:|:---:|:---:|:---:|
-| **Platforms** | Win | Win | Win / Lin | Win | 🔴 **Win / Lin / macOS** |
-| **ARM64** | ✗ | ✗ | ✗ | ✗ | 🔴 **✓** |
-| **Hook types** | Trampoline | Trampoline + IAT | Trampoline | Trampoline + IAT + VTable | 🔴 **Trampoline + IAT + PLT + VTable + Mid + Return** |
-| **Error handling** | C enum | C enum | exceptions | exceptions | 🔴 **`std::expected`** |
-| **C++ standard** | C89 API | .NET | C++23 | C++20 | 🔴 **C++23** |
-| **macOS lazy pointers** | ✗ | ✗ | ✗ | ✗ | 🔴 **✓** |
-| **RAII hook lifetime** | ✗ | ✗ | ✓ | ✓ | 🔴 **✓** |
-| **Batch group operations** | ✗ | ✗ | ✗ | ✗ | 🔴 **✓** |
-| **Hook chaining** | ✗ | ✓ | ✗ | ✓ | 🔴 **✓** |
-| **Mid-function hooks** | ✗ | ✗ | ✓ | ✗ | 🔴 **✓** |
-| **Return-value hooks** | ✗ | ✗ | ✗ | ✗ | 🔴 **✓** |
-| **Address-based hook API** | ✗ | ✗ | ✗ | ✗ | 🔴 **✓** |
-| **Pattern-scan hook** | ✗ | ✗ | ✗ | ✗ | 🔴 **✓** |
-| **Memory patch helpers** | ✗ | ✗ | ✗ | ✗ | 🔴 **✓** |
-| **Structured tracing** | ✗ | ✗ | ✗ | ✗ | 🔴 **✓ (VanTrace)** |
-| **Integrity watchdog** | ✗ | ✗ | ✗ | ✗ | 🔴 **✓** |
-| **ETW / AMSI suppression** | ✗ | ✗ | ✗ | ✗ | 🔴 **✓** |
-| **Multi-method injection** | ✗ | ✗ | ✗ | ✗ | 🔴 **✓ (4 methods)** |
-| **Anti-debug detection** | ✗ | ✗ | ✗ | ✗ | 🔴 **✓ (8 techniques)** |
-| **SW + HW breakpoints** | ✗ | ✗ | ✗ | ✗ | 🔴 **✓ (RAII)** |
-| **PE introspection** | ✗ | ✗ | ✗ | ✗ | 🔴 **✓** |
-| **Built-in packet capture** | ✗ | ✗ | ✗ | ✗ | 🔴 **✓ (VanNet)** |
-| **Pattern scanner** | ✗ | ✗ | ✗ | ✗ | 🔴 **✓ (IDA-style + BMH)** |
+[VanTrace](#-vantrace--structured-hook-instrumentation) · [VanNet](#-vannet--built-in-network-layer) · [FAQ](#-faq) · [Docs](#-documentation)
 
 </div>
 
@@ -96,8 +62,9 @@ Beyond hooking, it ships a complete instrumentation and stealth toolkit: **VanTr
 - **Named groups & HookRegistry** — batch enable/disable/remove across DLL boundaries
 - **`Group::hook_at()`** — trampoline from a raw address directly into a group
 - **`Group::hook_pattern()`** — scan for an IDA-style byte pattern and hook the first match in one call
+- **`Group::hook_callsite()` / `Group::hook_callsite_pattern()`** — patch a single CALL/JMP site directly into a group
 - **`Group::patch<T>()` / `Group::nop()`** — write typed values or NOP slides with automatic page-protection lifting
-- **Batch queue** — `queue_enable` / `queue_disable` / `apply_queued` amortises thread-suspension overhead
+- **Batch queue** — `queue_enable` / `queue_disable` / `apply` amortises thread-suspension overhead
 
 **Instrumentation**
 - **VanTrace** — lock-free ring buffer tracing with pluggable sinks, per-event timing, thread IDs, call depth, and raw context capture
@@ -107,7 +74,7 @@ Beyond hooking, it ships a complete instrumentation and stealth toolkit: **VanTr
 - **Software & hardware breakpoints** — RAII lifetime, DR0–DR3, VEH/sigaction, new-thread propagation
 - **Call stack capture** — raw VAs or annotated frames (with `VH_SYMBOLS_ENABLED`)
 - **PE introspection** — sections, exports, imports, code cave finder
-- **Symbol resolution** — DbgHelp (Windows) / libbacktrace (POSIX) behind `VH_SYMBOLS_ENABLED`
+- **Symbol resolution** — DbgHelp (Windows) / libbacktrace (POSIX)
 
 **Stealth & Analysis**
 - **Integrity watchdog** — background thread detects and reinstalls hooks removed by kernel drivers
@@ -125,8 +92,8 @@ Beyond hooking, it ships a complete instrumentation and stealth toolkit: **VanTr
 | | |
 |---|---|
 | **Compiler** | GCC 13+, Clang 17+, or MSVC 19.38+ with `/std:c++23` |
-| **CMake** | 3.25+ |
-| **Zydis** | Fetched automatically via CMake FetchContent (v4.1.0) |
+| **CMake** | 3.25+ (optional — drop-in linking works without CMake) |
+| **Zydis** | Linked into the precompiled library — no separate install needed |
 | **Windows** | x86 / x64 — MinGW i686 cross-compilation supported |
 | **Linux** | x64 / ARM64 |
 | **macOS** | x64 / ARM64 |
@@ -135,23 +102,22 @@ Beyond hooking, it ships a complete instrumentation and stealth toolkit: **VanTr
 
 ## 📦 Installation
 
-### Option A — Precompiled (drop-in, no build system required)
-
-Copy `include/` into your project and link against the precompiled `.lib` for your target. No Visual C++ Redistributable required — all libs use a static CRT.
+VanHooks is distributed as **precompiled static libraries with public headers**. Copy `include/` into your project, link against the `.lib` for your target, and you're done. No Redistributable required — all libs use a static CRT.
 
 | Target | Configuration | Path |
 |---|---|---|
 | Windows x64 | Release | `libs/MSVC/win-x64/Release/vanhooks.lib` |
 | Windows x86 | Release | `libs/MSVC/win-x86/Release/vanhooks.lib` |
 
+### MSVC project setup
 
-**MSVC project setup:**
 1. **Additional Include Directories** → `include\`
 2. **Additional Library Directories** → `lib\win-x64\Release\`
 3. **Additional Dependencies** → `vanhooks.lib`
 4. **Runtime Library** → `Multi-threaded (/MT)` for Release, `Multi-threaded Debug (/MTd)` for Debug
 
-**CMake (drop-in):**
+### CMake (drop-in)
+
 ```cmake
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)
     set(VH_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/lib/win-x64")
@@ -168,35 +134,7 @@ set_target_properties(VanHooks::vanhooks PROPERTIES
 target_link_libraries(my_target PRIVATE VanHooks::vanhooks)
 ```
 
-See [`lib/README.md`](lib/) for ARM64 and Linux / macOS build-from-source instructions.
-
-### Option B — CMake FetchContent
-
-```cmake
-include(FetchContent)
-FetchContent_Declare(vanhooks
-    GIT_REPOSITORY https://github.com/tsyvm/vanhooks.git
-    GIT_TAG        main
-)
-FetchContent_MakeAvailable(vanhooks)
-
-target_link_libraries(my_target PRIVATE vanhooks)
-```
-
-All modules are compiled in by default. Opt out of specific layers:
-
-```cmake
-set(VH_ENABLE_NET         OFF)  # VanNet packet capture (requires Npcap/libpcap)
-set(VH_ENABLE_SCANNER     OFF)  # pattern scanner
-set(VH_ENABLE_ANTIDEBUG   OFF)  # anti-debug detection
-set(VH_ENABLE_TRACE       OFF)  # VanTrace structured hook instrumentation
-set(VH_ENABLE_INJECT      OFF)  # process injection
-set(VH_ENABLE_SYMBOLS     OFF)  # symbol resolution (DbgHelp / libbacktrace)
-set(VH_ENABLE_PE          OFF)  # PE introspection
-set(VH_ENABLE_BREAKPOINT  OFF)  # software + hardware breakpoints
-set(VH_ENABLE_CALLSTACK   OFF)  # call stack capture
-set(VH_BUILD_SHARED       OFF)  # build as shared library instead of static
-```
+See [`lib/README.md`](lib/) for ARM64 and Linux / macOS library paths.
 
 ### Single include
 
@@ -293,7 +231,7 @@ Patches a single slot in a C++ virtual dispatch table.
 
 ```cpp
 void** vtbl = *reinterpret_cast<void***>(object_ptr);
-auto h = vh::vtable_hook(vtbl, /*slot=*/3, &hk_Render, &orig_Render);
+auto h = vh::vtable_hook(vtbl, /*slot=*/3, &hk_Render);
 ```
 
 ### Mid-Function Hook
@@ -313,6 +251,33 @@ auto h = vh::mid_hook(&target_fn,
 | **x64** | `rax`…`r15`, `rflags` — all `uint64_t` |
 | **x86** | `eax`…`edi`, `eflags` — all `uint32_t` |
 | **ARM64** | `x[0]`…`x[7]`, `lr` — all `uint64_t` |
+
+### CallSite Hook
+
+Patches the 32-bit relative displacement of a **single** `CALL` (E8) or `JMP` (E9) instruction, redirecting only that one call site. Every other caller of the same function is unaffected.
+
+```cpp
+using PFN = int(__cdecl*)(int);
+PFN g_orig = nullptr;
+
+int my_detour(int x) {
+    printf("intercepted: %d\n", x);
+    return g_orig(x);
+}
+
+// Address-based (primary form — common with pattern-scanned addresses)
+auto h = vh::callsite_hook(0x12AB34u, &my_detour, &g_orig,
+                           { .tag = "Game.SpeedCall" });
+
+// Function-pointer form
+auto h2 = vh::callsite_hook(&known_call_site, &my_detour, &g_orig);
+```
+
+| | Trampoline | CallSite |
+|---|---|---|
+| What is patched | Target function prologue | Displacement at one `CALL`/`JMP` site |
+| Callers affected | All callers | Only the one patched site |
+| ARM64 | ✓ | Returns `Error::Unsupported` |
 
 ### Return Hook (x64 only)
 
@@ -379,6 +344,20 @@ grp.disable();
 ```cpp
 grp.hook_at(0x5D5DB0u, &MyDetour, &orig_fn);
 grp.hook_at(addr, &MyDetour, nullptr, { .tag = "my_hook" });
+```
+
+### CallSite install
+
+```cpp
+// Direct address
+grp.hook_callsite(0x12AB34u, &MyDetour, &g_orig);
+grp.hook_callsite(0x12AB34u, &MyDetour, &g_orig, { .tag = "NFS.SpeedCall" });
+
+// Pattern scan — finds the pattern, treats the found byte as the E8/E9 site
+grp.hook_callsite_pattern("E8 ? ? ? ? 83 C4 04", 0, &MyDetour, &g_orig);
+
+// Advance past a preceding instruction to land on the E8 byte
+grp.hook_callsite_pattern("89 04 24 E8 ? ? ? ?", 3, &MyDetour, &g_orig);
 ```
 
 ### Pattern-scan hook
@@ -455,11 +434,12 @@ vh::hook(&target, &detour, &orig)
 | `ThreadInPrologue` | A thread's IP was inside the stolen bytes during remove; IP fixup resolved it |
 | `BreakpointSlotExhausted` | All four DR0–DR3 hardware slots are in use |
 | `ChainOrderViolation` | A chain link was removed before its base hook |
-| `TrampolineNoSpace` | Trampoline pool slab exhausted — increase `trampoline_pool_size` in `Config` |
+| `TrampolineNoSpace` | Prologue too short to steal bytes, or (on x64 CallSite) `&detour` is outside ±2 GB of the call site |
 | `ModuleNotFound` | `GetModuleHandle` / `dlopen` found no matching module |
 | `SymbolNotFound` | Symbol name not found in debug info |
 | `QueueEmpty` | `apply_queued()` called with nothing in the queue |
 | `ChainBaseNotFound` | Base `HookHandle` passed to `chain()` is unknown to the engine |
+| `InvalidAddress` | Byte at the given address is not the expected opcode (e.g. not E8/E9 for a CallSite hook) |
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
@@ -570,13 +550,15 @@ inj->eject();   // RAII — or explicit
 
 ## 🥷 Stealth Configuration
 
-```cpp
-vanhooks::Engine::Config cfg;
-cfg.suppress_etw              = true;  // patches EtwEventWrite / EtwEventWriteFull
-cfg.suppress_amsi             = true;  // patches AmsiScanBuffer / AmsiScanString
-cfg.enable_integrity_watchdog = true;
+ETW and AMSI suppression are configured through the global engine, accessible via `vanhooks::global_engine()`. The engine is pre-initialised with default settings; to override them (custom watchdog intervals, allocator, etc.) [contact us about a source license](https://www.teamvanilla.org/).
 
-vanhooks::Engine eng(cfg);
+```cpp
+// Access the global engine for interop and advanced operations
+auto& eng = vanhooks::global_engine();
+
+// ETW / AMSI suppression — call once during initialisation
+eng.suppress_etw();    // patches EtwEventWrite / EtwEventWriteFull
+eng.suppress_amsi();   // patches AmsiScanBuffer / AmsiScanString
 ```
 
 > ETW and AMSI suppression are user-mode measures. They have no effect on HVCI / VBS-protected systems.
@@ -585,15 +567,7 @@ vanhooks::Engine eng(cfg);
 
 ## 🐕 Integrity Watchdog
 
-Background thread that polls all installed hooks and reinstalls any removed externally by a kernel driver.
-
-```cpp
-vanhooks::Engine::Config cfg;
-cfg.enable_integrity_watchdog = true;
-cfg.watchdog_interval_ms      = 250;
-
-vanhooks::Engine eng(cfg);
-```
+Background thread that polls all installed hooks and reinstalls any removed externally by a kernel driver. The watchdog is configurable through `Engine::Config`; contact us about a source license for full config access.
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
@@ -730,11 +704,11 @@ tracer.set_filter(f);
 ### Configuration
 
 ```cpp
-vanhooks::trace::TracerConfig cfg;
-cfg.ring_capacity    = 8192;  // must be power of two
-cfg.overflow_policy  = vanhooks::trace::OverflowPolicy::BlockNewer;
-cfg.enable_timing    = true;
-cfg.enable_thread_id = true;
+vh::TraceConfig cfg;
+cfg.ring_capacity     = 8192;  // must be power of two
+cfg.overflow_policy   = vanhooks::trace::OverflowPolicy::BlockNewer;
+cfg.enable_timing     = true;
+cfg.enable_thread_id  = true;
 cfg.enable_call_depth = true;
 
 vh::Tracer tracer(cfg);
@@ -755,7 +729,7 @@ HRESULT __stdcall hk_CreateBuffer(ID3D11Device* dev, D3D11_BUFFER_DESC* desc, ..
 | Field | Type | Description |
 |---|---|---|
 | `kind` | `TraceEventKind` | `HookEnter`, `HookExit`, or `TraceDropped` |
-| `hook_kind` | `HookKind` | Trampoline / IAT / PLT / VTable / Mid |
+| `hook_kind` | `HookKind` | Trampoline / IAT / PLT / VTable / Mid / CallSite |
 | `hook_id` | `uint64_t` | Stable identifier matching `HookHandle::id` |
 | `thread_id` | `uint32_t` | OS thread ID at event time |
 | `timestamp` | `TimePoint` | Monotonic clock point when event was produced |
@@ -777,7 +751,7 @@ printf("produced=%llu  consumed=%llu  dropped=%llu  overflows=%llu\n",
 
 ## 🌐 VanNet — Built-in Network Layer
 
-Live packet capture and protocol parsing. Compiled in by default when Npcap / libpcap is present. Disable with `VH_ENABLE_NET=OFF`.
+Live packet capture and protocol parsing. Requires Npcap (Windows) / libpcap (POSIX).
 
 ```cpp
 #include <vh/net.hpp>
@@ -803,32 +777,10 @@ writer.write(*pkt);
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
-## 🖥️ Platform Support
-
-| Feature | Win x86 | Win x64 | Linux x64 | Linux ARM64 | macOS x64 | macOS ARM64 |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|
-| Trampoline hook | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| IAT hook | ✓ | ✓ | — | — | — | — |
-| PLT / GOT hook | — | — | ✓ | ✓ | ✓ | ✓ |
-| macOS lazy pointer hook | — | — | — | — | ✓ | ✓ |
-| VTable hook | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Mid-function hook | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Return hook | ✓ | ✓ | — | — | — | — |
-| VanTrace | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Software breakpoints | ✓ | ✓ | ✓ | — | ✓ | — |
-| Hardware breakpoints (DR) | ✓ | ✓ | ✓ | — | stub | stub |
-| Anti-debug (full suite) | ✓ | ✓ | ptrace | ptrace | — | — |
-| ETW / AMSI suppression | ✓ | ✓ | — | — | — | — |
-| Process injection | ✓ | ✓ | — | — | — | — |
-| Integrity watchdog | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| MinGW cross-compile | ✓ | ✓ | — | — | — | — |
-
-<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
-
 ## ❓ FAQ
 
 **Does VanHooks work with MinGW i686 cross-compilation?**
-Yes. Windows x86 and x64 targets build cleanly under MinGW with static linking. All Windows-specific code guards against MSVC intrinsics that MinGW does not provide.
+Yes. Windows x86 and x64 targets build cleanly under MinGW with static linking.
 
 **Will the watchdog fight with kernel-mode anti-cheat?**
 The watchdog detects user-mode patch removal by reading bytes. Kernel drivers that use kernel-mode hooks or memory scanning operate below the watchdog's visibility.
@@ -837,7 +789,7 @@ The watchdog detects user-mode patch removal by reading bytes. Kernel drivers th
 `set_hardware` returns `Error::BreakpointSlotExhausted`. Remove an existing hardware breakpoint to free a slot.
 
 **Is there a global engine or must I construct one?**
-`vanhooks::global_engine()` returns a default-constructed process-wide singleton. You can also construct your own `Engine` instances with custom `Config` for isolated trampoline pools or per-subsystem watchdog settings.
+`vanhooks::global_engine()` returns a process-wide singleton accessible through the public API. Custom `Engine` instances with full `Config` control (independent trampoline pools, custom allocators, per-subsystem watchdog settings) are available via a source license.
 
 **Can I use VanHooks inside a DLL injected via ManualMap?**
 Yes — VanHooks does not rely on `DllMain` or the loader lock internally.
@@ -851,8 +803,8 @@ Yes. Each `vh::Tracer` owns an independent ring buffer, consumer thread, sink, a
 **What's the difference between `vh::hook(uintptr_t, …)` and `reinterpret_cast`?**
 They're equivalent at the machine level. The address-based overloads exist to remove the cast at every call site when working with runtime-resolved or pattern-scanned addresses.
 
-**Where is the source code?**
-VanHooks ships as precompiled static libraries with public headers. Source is not publicly available.
+**Can I configure the Engine pool size, allocator, or watchdog interval?**
+Full `Engine::Config` control is available via a source license. The precompiled SDK exposes the global engine and all hook operations but does not allow constructing a custom-configured Engine directly.
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
