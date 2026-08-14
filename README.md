@@ -550,16 +550,7 @@ inj->eject();   // RAII — or explicit
 
 ## 🥷 Stealth Configuration
 
-ETW and AMSI suppression are configured through the global engine, accessible via `vanhooks::global_engine()`. The engine is pre-initialised with default settings; to override them (custom watchdog intervals, allocator, etc.) [contact us about a source license](https://www.teamvanilla.org/).
-
-```cpp
-// Access the global engine for interop and advanced operations
-auto& eng = vanhooks::global_engine();
-
-// ETW / AMSI suppression — call once during initialisation
-eng.suppress_etw();    // patches EtwEventWrite / EtwEventWriteFull
-eng.suppress_amsi();   // patches AmsiScanBuffer / AmsiScanString
-```
+ETW and AMSI suppression are available as engine-level options. The engine is pre-initialised with default settings; to configure stealth options or other advanced settings [contact us about a source license](https://www.teamvanilla.org/).
 
 > ETW and AMSI suppression are user-mode measures. They have no effect on HVCI / VBS-protected systems.
 
