@@ -558,7 +558,7 @@ ETW and AMSI suppression are available as engine-level options. The engine is pr
 
 ## 🐕 Integrity Watchdog
 
-Background thread that polls all installed hooks and reinstalls any removed externally by a kernel driver. The watchdog is configurable through `Engine::Config`; contact us about a source license for full config access.
+Background thread that polls all installed hooks and reinstalls any removed externally by a kernel driver. The watchdog is configurable through `Engine::Config`; [contact us about a source license](https://www.teamvanilla.org/).
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
