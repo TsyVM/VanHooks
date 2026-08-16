@@ -89,7 +89,7 @@ VanHooks is distributed as **precompiled static libraries with public API header
 - **Module stomping** — place a payload inside a signed system DLL's `.text` for `MEM_IMAGE` VAD attribution
 - **ETW suppression** — patches `EtwEventWrite` / `EtwEventWriteFull` to silence user-mode telemetry
 - **AMSI suppression** — patches `AmsiScanBuffer` / `AmsiScanString` to return clean without scanning
-- **Process injection** — 21 techniques (original 4 + 17 extended) with RAII eject; unified `vh::inject_by_method()` dispatcher
+- **Process injection** — 21 techniques with RAII eject; unified `vh::inject_by_method()` dispatcher
 - **Anti-debug detection** — eight independent techniques with a structured per-technique report
 - **VEH hook** — INT3/BRK-based breakpoint hook via VEH, no DR registers; up to 256 concurrent hooks
 
