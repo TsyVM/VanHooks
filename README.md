@@ -5,7 +5,7 @@
 <p><em>Modern C++23 Cross-Platform Function Hooking & Instrumentation Library</em></p>
 
 <a href="#">
-<img src="https://readme-typing-svg.demolab.com/?lines=Trampoline+%C2%B7+IAT+%C2%B7+PLT+%C2%B7+VTable+%C2%B7+Mid-Function;Pattern+Scanner+%C2%B7+Injection+%C2%B7+Symbols+%C2%B7+Breakpoints;Watchdog+%C2%B7+Anti-Debug+%C2%B7+ETW+%C2%B7+AMSI;VanTrace+%C2%B7+Ring+Buffer+%C2%B7+Sinks+%C2%B7+Filters;One+API.+Every+Platform.+Zero+Exceptions.;std%3A%3Aexpected+all+the+way+down.&font=Fira%20Code&center=true&width=650&height=45&color=FF3B3B&vCenter=true&size=22&pause=1800"/>
+<img src="https://readme-typing-svg.demolab.com/?lines=Trampoline+%C2%B7+IAT+%C2%B7+PLT+%C2%B7+VTable+%C2%B7+Mid-Function;CallSite+%C2%B7+HwBp+%C2%B7+PageGuard+%C2%B7+Nirvana+IC;Pattern+Scanner+%C2%B7+Injection+%C2%B7+Symbols+%C2%B7+Breakpoints;Watchdog+%C2%B7+Anti-Debug+%C2%B7+ETW+%C2%B7+AMSI;VanTrace+%C2%B7+Ring+Buffer+%C2%B7+Sinks+%C2%B7+Filters;One+API.+Every+Platform.+Zero+Exceptions.;std%3A%3Aexpected+all+the+way+down.&font=Fira%20Code&center=true&width=650&height=45&color=FF3B3B&vCenter=true&size=22&pause=1800"/>
 </a>
 
 <br/>
@@ -29,7 +29,7 @@
 
 VanHooks is a production-grade C++23 function hooking and instrumentation library for Windows, Linux, and macOS. One header. One API. `std::expected` all the way down — no exceptions, no hidden failure paths, no external dependencies beyond Zydis.
 
-Beyond hooking, it ships a complete instrumentation and stealth toolkit: **VanTrace** (structured runtime tracing), **VanNet** (live packet capture), a pattern scanner, disassembler, PE introspector, software and hardware breakpoints, call stack capture, anti-debug detection, process injection, integrity watchdog, and ETW/AMSI suppression — all behind `#include <vh/vh.hpp>`.
+Beyond hooking, it ships a complete instrumentation and stealth toolkit: **VanTrace** (structured runtime tracing), **VanNet** (live packet capture), a pattern scanner, disassembler, PE introspector, software and hardware breakpoints, call stack capture, call stack spoofing, anti-debug detection, process injection (21 techniques), module unhooking, direct/indirect syscall gates, PEB masking, thread hiding, sleep obfuscation, string-free API resolution, module stomping, and ETW/AMSI suppression — all behind `#include <vh/vh.hpp>`.
 
 VanHooks is distributed as **precompiled static libraries with public API headers**. Drop the headers and the matching `.lib` into your project and link — no build system integration or source compilation required.
 
@@ -41,7 +41,7 @@ VanHooks is distributed as **precompiled static libraries with public API header
 
 [Hook Types](#-hook-types) · [Lifetime & RAII](#️-hook-lifetime--raii) · [Groups](#️-groups--batch-lifecycle-management) · [Chaining](#-hook-chaining) · [Error Handling](#-error-handling) · [HookRegistry](#️-multi-module-projects--hookregistry)
 
-[Scanner](#-pattern-scanner) · [Anti-Debug](#-anti-debug-detection) · [Disassembler](#-disassembler) · [Injection](#-process-injection) · [Stealth](#-stealth-configuration) · [Watchdog](#-integrity-watchdog) · [Symbols](#-symbol-resolution) · [PE Introspection](#-pe-introspection) · [Breakpoints](#-breakpoints) · [Call Stack](#-call-stack-capture)
+[Scanner](#-pattern-scanner) · [Anti-Debug](#-anti-debug-detection) · [Disassembler](#-disassembler) · [Injection](#-process-injection) · [Stealth](#-stealth-subsystems) · [Watchdog](#-integrity-watchdog) · [Symbols](#-symbol-resolution) · [PE Introspection](#-pe-introspection) · [Breakpoints](#-breakpoints) · [Call Stack](#-call-stack-capture)
 
 [VanTrace](#-vantrace--structured-hook-instrumentation) · [VanNet](#-vannet--built-in-network-layer) · [FAQ](#-faq) · [Docs](#-documentation)
 
@@ -52,15 +52,16 @@ VanHooks is distributed as **precompiled static libraries with public API header
 ## ✨ Features at a Glance
 
 **Hooking**
-- **Six hook types** — Trampoline, IAT (`iat_hook` / `iat_hook_all`), PLT/GOT, VTable, Mid-function, Return (x64)
-- **Three-level API** — beginner `vh::hook()`, explicit-type `vh::inline_hook()`, group-based `vh::group()`
-- **Address-based hooks** — `vh::hook(uintptr_t, …)` for runtime-resolved addresses; no `reinterpret_cast` at the call site
+- **Nine hook types** — Trampoline, IAT (`iat_hook` / `iat_hook_all`), PLT/GOT, VTable, Mid-function, CallSite, HwBp, PageGuard, Instrumentation Callback (Nirvana IC)
+- **Three-level API** — beginner `vh::hook()`, explicit-type `vh::inline_hook()` / `vh::callsite_hook()` / `vh::hwbp_hook()` / `vh::page_guard_hook()` / `vh::ic_hook()`, group-based `vh::group()`
+- **Address-based hooks** — `vh::hook(uintptr_t, …)` and `vh::inline_hook(uintptr_t, …)` for runtime-resolved addresses; no `reinterpret_cast` at the call site
 - **Hook chaining** — stack multiple detours on one target; each sees the previous one's trampoline
 - **Thread-safe by default** — all installs suspend threads; IP fixup handles prologue races on remove
 
 **Groups & Lifecycle**
 - **Named groups & HookRegistry** — batch enable/disable/remove across DLL boundaries
 - **`Group::hook_at()`** — trampoline from a raw address directly into a group
+- **`Group::hook_hwbp()`** — hardware breakpoint hook directly into a group
 - **`Group::hook_pattern()`** — scan for an IDA-style byte pattern and hook the first match in one call
 - **`Group::hook_callsite()` / `Group::hook_callsite_pattern()`** — patch a single CALL/JMP site directly into a group
 - **`Group::patch<T>()` / `Group::nop()`** — write typed values or NOP slides with automatic page-protection lifting
@@ -78,10 +79,19 @@ VanHooks is distributed as **precompiled static libraries with public API header
 
 **Stealth & Analysis**
 - **Integrity watchdog** — background thread detects and reinstalls hooks removed by kernel drivers
+- **Module unhooking** — restore `.text` of system DLLs from `\KnownDlls` or disk to strip EDR inline hooks
+- **Syscall gate** — direct and indirect syscall stubs with Hell's Gate / Halo's Gate / Tartarus Gate SSN resolution
+- **Call stack spoofing** — RAII scope that swaps the frame's saved return address to a clean ntdll gadget
+- **PEB masking** — clears `BeingDebugged`, `NtGlobalFlag`, heap flags, and optionally unlinks modules from `PEB.Ldr`
+- **Thread hiding** — `NtSetInformationThread(ThreadHideFromDebugger)` and DR-register camouflage via `NtGetContextThread` hook
+- **Sleep obfuscation** — RC4-encrypts a caller-specified memory region for the duration of a sleep
+- **API hashing** — string-free PEB-walking module+export resolver (djb2 / FNV-1a, constexpr, cached)
+- **Module stomping** — place a payload inside a signed system DLL's `.text` for `MEM_IMAGE` VAD attribution
 - **ETW suppression** — patches `EtwEventWrite` / `EtwEventWriteFull` to silence user-mode telemetry
 - **AMSI suppression** — patches `AmsiScanBuffer` / `AmsiScanString` to return clean without scanning
-- **Process injection** — four methods (LoadLibrary, ManualMap, ThreadHijack, ApcQueue) with RAII eject
+- **Process injection** — 21 techniques (original 4 + 17 extended) with RAII eject; unified `vh::inject_by_method()` dispatcher
 - **Anti-debug detection** — eight independent techniques with a structured per-technique report
+- **VEH hook** — INT3/BRK-based breakpoint hook via VEH, no DR registers; up to 256 concurrent hooks
 
 **`std::expected` throughout** — no exceptions, no raw OS error codes, no hidden failure paths.
 
@@ -187,7 +197,7 @@ void setup() {
 
 ## 🎣 Hook Types
 
-VanHooks exposes six distinct hook mechanisms, all returning `Result<Hook>` or `Result<HookHandle>`.
+VanHooks exposes nine distinct hook mechanisms, all returning `Result<Hook>`.
 
 ### Trampoline (Inline)
 
@@ -279,9 +289,42 @@ auto h2 = vh::callsite_hook(&known_call_site, &my_detour, &g_orig);
 | Callers affected | All callers | Only the one patched site |
 | ARM64 | ✓ | Returns `Error::Unsupported` |
 
+### HwBp Hook (Hardware Breakpoint)
+
+Installs a hook at an address using DR0–DR3 debug registers and a VEH handler. No bytes are written to the target function. Windows x64 only; returns `Error::Unsupported` on other platforms. Maximum 4 active HwBp hooks.
+
+```cpp
+auto h = vh::hwbp_hook(&target_fn,
+    [](vanhooks::MidContext* ctx) noexcept {
+        ctx->rax = 0;
+    },
+    { .dr_slot = 0, .tag = "silent_hook" });
+
+// Address-based
+auto h2 = vh::hwbp_hook(reinterpret_cast<void*>(0xDEADBEEFu), &my_callback);
+```
+
+### PageGuard Hook
+
+Sets `PAGE_GUARD` on the target's memory page via `VirtualProtect` and intercepts `EXCEPTION_GUARD_PAGE` in a VEH. No inline patch is written. Windows only; returns `Error::Unsupported` on POSIX.
+
+```cpp
+auto h = vh::page_guard_hook(&target_fn, &my_callback,
+    { .condition = vanhooks::PageGuardCondition::Write, .auto_rearm = true });
+```
+
+### Instrumentation Callback (Nirvana IC)
+
+Sets `KPROCESS.InstrumentationCallback` via `NtSetInformationProcess(0x28)`, firing on every kernel-to-user-mode transition (syscall returns, APCs, exceptions). Process-wide singleton — a second install returns `Error::HookAlreadyExists`. Windows x64 only.
+
+```cpp
+// callback must be a valid naked/executable stub
+auto h = vh::ic_hook(&my_ic_stub);
+```
+
 ### Return Hook (x64 only)
 
-Captures the function's return value and lets you modify it before the caller sees it.
+Captures the function's return value and lets you modify it before the caller sees it. Available via `vanhooks::global_engine()`.
 
 ```cpp
 auto& eng = vanhooks::global_engine();
@@ -307,11 +350,15 @@ Every `vh::Hook` object owns its installation. Going out of scope automatically 
 } // removed automatically
 
 // Explicit control
-h.enable();   // returns Result<ref<Hook>>
-h.disable();  // returns Result<ref<Hook>>
+h.enable();   // returns Hook& (chainable)
+h.disable();  // returns Hook&
 h.remove();   // idempotent — safe to call multiple times
 h.valid();    // false after removal
+h.enabled();  // current enabled state
 h.tag();      // optional string label set at install time
+h.kind();     // vanhooks::HookKind
+h.target();   // original function address
+h.trampoline(); // callable original (trampoline hooks only)
 ```
 
 ### Thread Safety & IP Fixup
@@ -346,6 +393,13 @@ grp.hook_at(0x5D5DB0u, &MyDetour, &orig_fn);
 grp.hook_at(addr, &MyDetour, nullptr, { .tag = "my_hook" });
 ```
 
+### Hardware breakpoint install
+
+```cpp
+grp.hook_hwbp(0xDEADBEEFu, &MyMidCallback);
+grp.hook_hwbp(fn_ptr, &MyMidCallback, { .dr_slot = 1 });
+```
+
 ### CallSite install
 
 ```cpp
@@ -358,6 +412,9 @@ grp.hook_callsite_pattern("E8 ? ? ? ? 83 C4 04", 0, &MyDetour, &g_orig);
 
 // Advance past a preceding instruction to land on the E8 byte
 grp.hook_callsite_pattern("89 04 24 E8 ? ? ? ?", 3, &MyDetour, &g_orig);
+
+// Hook the Nth match (zero-indexed) instead of the first
+grp.hook_callsite_pattern("E8 ? ? ? ? 85 C0", 0, 2, &MyDetour, &g_orig);
 ```
 
 ### Pattern-scan hook
@@ -380,10 +437,11 @@ grp.nop(0x14E738B, 2);                  // NOP slide
 ### Tagged lookup & batch queue
 
 ```cpp
-auto res = grp.at("shadow_hook");
-if (res) res->get().disable();
+// Throws std::out_of_range if tag is not found
+Hook& h = grp.at("shadow_hook");
+h.disable();
 
-// Cross-group atomic flush
+// Cross-group atomic flush via the engine's queue
 auto& eng = vanhooks::global_engine();
 eng.queue_enable(h1);
 eng.queue_disable(h2);
@@ -440,6 +498,12 @@ vh::hook(&target, &detour, &orig)
 | `QueueEmpty` | `apply_queued()` called with nothing in the queue |
 | `ChainBaseNotFound` | Base `HookHandle` passed to `chain()` is unknown to the engine |
 | `InvalidAddress` | Byte at the given address is not the expected opcode (e.g. not E8/E9 for a CallSite hook) |
+| `PeInvalidHeader` | DOS/NT signature mismatch or bad offset |
+| `PeNoExportDirectory` | Module has no export directory |
+| `PeItemNotFound` | Named export/import/section not found |
+| `BreakpointAlreadySet` | A breakpoint is already installed at this address |
+| `BreakpointInstallFailed` | OS call to set/clear context failed |
+| `CallstackCaptureFailed` | `RtlCaptureStackBackTrace` / `backtrace` returned 0 |
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
@@ -528,16 +592,27 @@ printf("%s", vh::disasm::format_listing(insns).c_str());
 
 ## 💉 Process Injection
 
-Four injection methods, each with distinct stealth and compatibility trade-offs.
+21 injection techniques available through a unified dispatcher, plus RAII eject.
 
 ```cpp
-#include <vh/inject.hpp>
+#include <vh/inject_unified.hpp>  // full 21-technique catalogue
+// or
+#include <vh/inject.hpp>          // original 4 techniques only
 
+// Original 4 — RAII Injection object
 auto inj  = vh::inject(pid, "C:\\path\\payload.dll", { .method = vh::InjectMethod::ManualMap });
-auto inj2 = vh::inject_from_memory(pid, pe_bytes,    { .method = vh::InjectMethod::ThreadHijack });
+auto inj2 = vh::inject_from_memory(pid, pe_bytes, { .method = vh::InjectMethod::ThreadHijack });
+inj->eject();   // explicit — or let RAII handle it
 
-inj->eject();   // RAII — or explicit
+// Unified dispatcher — all 21 techniques via InjectMethodEx
+auto inj3 = vh::inject_by_method(vh::InjectRequest{
+    .pid    = pid,
+    .method = vh::InjectMethodEx::SpawnEarlybirdApc,
+    .dll_path = L"payload.dll",
+});
 ```
+
+**Original 4 methods:**
 
 | Method | Module-list entry | Remote thread | Stealth |
 |---|:---:|:---:|:---:|
@@ -546,13 +621,140 @@ inj->eject();   // RAII — or explicit
 | `ThreadHijack` | Configurable | ✗ | High |
 | `ApcQueue` | Configurable | ✗ | High |
 
+**Extended 17 methods** (`vh/inject_ex.hpp`): `SpawnEarlybirdApc`, `SpawnHerpaderped`, `SpawnGhosted`, `SpawnDoppelganged`, `NtCreateThreadEx`, `RtlCreateUserThread`, `Reflective`, `SetWindowsHook`, `QueueUserApcEx2`, `WaitingThreadHijack`, `KernelCallbackTable`, `ThreadlessCallback`, `ModuleStompRemote`, `Propagate`, `EwmSendMessage`, and more.
+
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
-## 🥷 Stealth Configuration
+## 🥷 Stealth Subsystems
+
+### ETW & AMSI Suppression
 
 ETW and AMSI suppression are available as engine-level options. The engine is pre-initialised with default settings; to configure stealth options or other advanced settings [contact us about a source license](https://www.teamvanilla.org/).
 
 > ETW and AMSI suppression are user-mode measures. They have no effect on HVCI / VBS-protected systems.
+
+### Module Unhooking
+
+Restore a system DLL's `.text` from its `\KnownDlls` section object (or disk fallback), stripping any EDR/AV inline hooks installed after load.
+
+```cpp
+#include <vh/unhook.vh>
+
+// Restore the four DLLs EDRs most commonly hook
+auto reports = vh::unhook::restore_defaults();
+
+// Restore a specific module
+auto r = vh::unhook::restore_module("wininet.dll");
+
+// Diff only — see which bytes differ without patching
+auto diff = vh::unhook::diff_module("ntdll.dll");
+```
+
+### Syscall Gate
+
+Direct and indirect syscall stubs with automatic SSN resolution (Hell's Gate → Halo's Gate → Tartarus Gate fallback chain). Windows x64 primary; all entry points return `Error::Unsupported` on POSIX and ARM64.
+
+```cpp
+#include <vh/syscalls.vh>
+
+// Resolve SSN and call NtProtectVirtualMemory directly (no ntdll trampoline)
+auto stub = vh::syscalls::get_stub("NtProtectVirtualMemory",
+                                   vh::syscalls::Mode::Indirect);
+```
+
+### Call Stack Spoofing
+
+RAII scope that replaces the current frame's saved return address with a clean ntdll gadget, hiding the hook from stack-walking scanners.
+
+```cpp
+#include <vh/callstack_spoof.vh>
+
+NTSTATUS __stdcall DoSensitive(...) {
+    VH_CALLSTACK_SPOOF();   // return addr → ntdll gadget for this scope
+    return NtProtectVirtualMemory(...);
+}
+```
+
+### PEB Masking
+
+Clear debugger-indicator fields in the PEB and optionally unlink modules from `PEB.Ldr`. Windows only.
+
+```cpp
+#include <vh/peb_mask.vh>
+
+vh::peb_mask::apply(vh::peb_mask::BeingDebugged |
+                    vh::peb_mask::NtGlobalFlag   |
+                    vh::peb_mask::HeapFlags);
+
+vh::peb_mask::unlink_modules({ "payload.dll" });
+vh::peb_mask::restore();   // undo all changes
+```
+
+### Thread Hiding & DR Camouflage
+
+```cpp
+#include <vh/thread_hide.vh>
+
+vh::thread_hide::hide_current_thread();   // ThreadHideFromDebugger
+
+// Hide DR0-DR3 from user-mode GetThreadContext scanners
+auto guard = vh::thread_hide::dr_camouflage_scope();
+```
+
+### Sleep Obfuscation
+
+Encrypt a memory region for the duration of a sleep so in-memory scanners see ciphertext.
+
+```cpp
+#include <vh/sleep_obf.vh>
+
+// Sleep 3 s with main-module .text encrypted (RC4, fresh key per call)
+HMODULE self = GetModuleHandleW(nullptr);
+MODULEINFO mi{};
+GetModuleInformation(GetCurrentProcess(), self, &mi, sizeof(mi));
+vh::sleep_obf::sleep_encrypted(3000, mi.lpBaseOfDll, mi.SizeOfImage);
+```
+
+### API Hashing
+
+PEB-walking module + export resolver that takes constexpr 32-bit hashes — no API strings in `.rdata`.
+
+```cpp
+#include <vh/api_hash.vh>
+
+using namespace vh::api_hash;
+
+constexpr auto H_K32  = module_djb2("kernel32.dll");
+constexpr auto H_VP   = export_djb2("VirtualProtect");
+
+using PFN_VP = BOOL (WINAPI*)(LPVOID, SIZE_T, DWORD, PDWORD);
+auto VirtualProtect_ = reinterpret_cast<PFN_VP>(resolve(H_K32, H_VP));
+```
+
+### Module Stomping
+
+Place a payload inside a signed system DLL's `.text` for `MEM_IMAGE` VAD attribution.
+
+```cpp
+#include <vh/module_stomp.vh>
+
+// Auto-select a safe host, overwrite its .text with shellcode
+auto host = vh::module_stomp::find_stomp_target(payload.size());
+auto r    = vh::module_stomp::stomp_at(host->base, payload);
+// ...
+vh::module_stomp::restore(host->base);
+```
+
+### VEH Hook
+
+INT3/BRK-based breakpoint hook using the Vectored Exception Handler. No DR registers; coexists with HwBp hooks. Up to 256 concurrent VEH hooks.
+
+```cpp
+#include <vh/veh_hook.vh>
+
+auto h = vh::veh_hook::install(&target_fn,
+    [](vanhooks::MidContext* ctx) noexcept { ctx->rax = 0; });
+```
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
@@ -720,7 +922,7 @@ HRESULT __stdcall hk_CreateBuffer(ID3D11Device* dev, D3D11_BUFFER_DESC* desc, ..
 | Field | Type | Description |
 |---|---|---|
 | `kind` | `TraceEventKind` | `HookEnter`, `HookExit`, or `TraceDropped` |
-| `hook_kind` | `HookKind` | Trampoline / IAT / PLT / VTable / Mid / CallSite |
+| `hook_kind` | `HookKind` | Trampoline / IAT / PLT / VTable / Mid / CallSite / HwBp / PageGuard / IC |
 | `hook_id` | `uint64_t` | Stable identifier matching `HookHandle::id` |
 | `thread_id` | `uint32_t` | OS thread ID at event time |
 | `timestamp` | `TimePoint` | Monotonic clock point when event was produced |
@@ -777,10 +979,10 @@ Yes. Windows x86 and x64 targets build cleanly under MinGW with static linking.
 The watchdog detects user-mode patch removal by reading bytes. Kernel drivers that use kernel-mode hooks or memory scanning operate below the watchdog's visibility.
 
 **What happens if all four DR slots are full?**
-`set_hardware` returns `Error::BreakpointSlotExhausted`. Remove an existing hardware breakpoint to free a slot.
+`set_hardware` and `hwbp_hook` return `Error::BreakpointSlotExhausted`. Remove an existing hardware breakpoint to free a slot. VEH hooks (`vh::veh_hook`) are an alternative that doesn't use DR registers.
 
 **Is there a global engine or must I construct one?**
-`vanhooks::global_engine()` returns a process-wide singleton accessible through the public API. Custom `Engine` instances with full `Config` control (independent trampoline pools, custom allocators, per-subsystem watchdog settings) are available via a source license.
+`vanhooks::global_engine()` returns a process-wide singleton accessible through the public API. Custom `Engine` instances with full `Config` control (independent trampoline pools, custom allocators, per-subsystem watchdog settings) are available via a source license. `vh::advanced::engine()` is a convenience alias for the same global.
 
 **Can I use VanHooks inside a DLL injected via ManualMap?**
 Yes — VanHooks does not rely on `DllMain` or the loader lock internally.
@@ -793,6 +995,9 @@ Yes. Each `vh::Tracer` owns an independent ring buffer, consumer thread, sink, a
 
 **What's the difference between `vh::hook(uintptr_t, …)` and `reinterpret_cast`?**
 They're equivalent at the machine level. The address-based overloads exist to remove the cast at every call site when working with runtime-resolved or pattern-scanned addresses.
+
+**What is the difference between HwBp hooks and VEH hooks?**
+HwBp hooks use the CPU's debug registers (DR0–DR3) and fire via `EXCEPTION_SINGLE_STEP` — no byte is written to the target. VEH hooks write a single `0xCC` (INT3) byte and fire via `EXCEPTION_BREAKPOINT`. HwBp is limited to 4 simultaneous hooks; VEH hooks support up to 256 and work on ARM64 where HwBp is unsupported.
 
 **Can I configure the Engine pool size, allocator, or watchdog interval?**
 Full `Engine::Config` control is available via a source license. The precompiled SDK exposes the global engine and all hook operations but does not allow constructing a custom-configured Engine directly.
