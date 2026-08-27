@@ -29,7 +29,7 @@
 
 VanHooks is a production-grade C++23 function hooking and instrumentation library for Windows, Linux, and macOS. One header. One API. `std::expected` all the way down — no exceptions, no hidden failure paths, no external dependencies beyond Zydis.
 
-Beyond hooking, it ships a complete instrumentation and stealth toolkit: **VanTrace** (structured runtime tracing), **VanNet** (live packet capture), a pattern scanner, disassembler, PE introspector, software and hardware breakpoints, call stack capture, call stack spoofing, anti-debug detection, process injection (21 techniques), module unhooking, direct/indirect syscall gates, PEB masking, thread hiding, sleep obfuscation, string-free API resolution, module stomping, and ETW/AMSI suppression — all behind `#include <vh/vh.hpp>`.
+Beyond hooking, it ships a complete instrumentation and stealth toolkit: **VanTrace** (structured runtime tracing), **VanNet** (live packet capture), a pattern scanner, disassembler, PE introspector, software and hardware breakpoints, call stack capture, call stack spoofing, anti-debug detection, process injection (21 techniques), module unhooking, direct/indirect syscall gates, PEB masking, thread hiding, sleep obfuscation, string-free API resolution, module stomping, and ETW/AMSI suppression — all behind `#include <vh/vh.vh>`.
 
 VanHooks is distributed as **precompiled static libraries with public API headers**. Drop the headers and the matching `.lib` into your project and link — no build system integration or source compilation required.
 
@@ -149,7 +149,7 @@ See [`lib/README.md`](lib/) for ARM64 and Linux / macOS library paths.
 ### Single include
 
 ```cpp
-#include <vh/vh.hpp>  // everything you need
+#include <vh/vh.vh>  // everything you need
 ```
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
@@ -157,7 +157,7 @@ See [`lib/README.md`](lib/) for ARM64 and Linux / macOS library paths.
 ## ⚡ Quick Start
 
 ```cpp
-#include <vh/vh.hpp>
+#include <vh/vh.vh>
 
 // Windows — intercept MessageBoxA
 static int (WINAPI* orig_MessageBoxA)(HWND, LPCSTR, LPCSTR, UINT) = nullptr;
@@ -576,7 +576,7 @@ for (auto& f : report.findings)
 Zydis-backed length disassembler and full instruction decoder. Always available — no optional flag required.
 
 ```cpp
-#include <vh/disasm.hpp>
+#include <vh/disasm.vh>
 
 vh::disasm::Disassembler dis;
 
@@ -595,9 +595,9 @@ printf("%s", vh::disasm::format_listing(insns).c_str());
 21 injection techniques available through a unified dispatcher, plus RAII eject.
 
 ```cpp
-#include <vh/inject_unified.hpp>  // full 21-technique catalogue
+#include <vh/inject_unified.vh>  // full 21-technique catalogue
 // or
-#include <vh/inject.hpp>          // original 4 techniques only
+#include <vh/inject.vh>          // original 4 techniques only
 
 // Original 4 — RAII Injection object
 auto inj  = vh::inject(pid, "C:\\path\\payload.dll", { .method = vh::InjectMethod::ManualMap });
@@ -621,7 +621,7 @@ auto inj3 = vh::inject_by_method(vh::InjectRequest{
 | `ThreadHijack` | Configurable | ✗ | High |
 | `ApcQueue` | Configurable | ✗ | High |
 
-**Extended 17 methods** (`vh/inject_ex.hpp`): `SpawnEarlybirdApc`, `SpawnHerpaderped`, `SpawnGhosted`, `SpawnDoppelganged`, `NtCreateThreadEx`, `RtlCreateUserThread`, `Reflective`, `SetWindowsHook`, `QueueUserApcEx2`, `WaitingThreadHijack`, `KernelCallbackTable`, `ThreadlessCallback`, `ModuleStompRemote`, `Propagate`, `EwmSendMessage`, and more.
+**Extended 17 methods** (`vh/inject_ex.vh`): `SpawnEarlybirdApc`, `SpawnHerpaderped`, `SpawnGhosted`, `SpawnDoppelganged`, `NtCreateThreadEx`, `RtlCreateUserThread`, `Reflective`, `SetWindowsHook`, `QueueUserApcEx2`, `WaitingThreadHijack`, `KernelCallbackTable`, `ThreadlessCallback`, `ModuleStompRemote`, `Propagate`, `EwmSendMessage`, and more.
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
@@ -769,7 +769,7 @@ Background thread that polls all installed hooks and reinstalls any removed exte
 Requires `VH_SYMBOLS_ENABLED`. Uses DbgHelp on Windows and libbacktrace on POSIX.
 
 ```cpp
-#include <vh/symbols.hpp>
+#include <vh/symbols.vh>
 
 auto sym  = vh::symbols::resolve(address);
 auto addr = vh::symbols::find("NtQuerySystemInformation", "ntdll.dll");
@@ -787,7 +787,7 @@ for (auto& line : vh::symbols::current_stack())
 Zero-copy in-process PE reader. Windows only.
 
 ```cpp
-#include <vh/pe.hpp>
+#include <vh/pe.vh>
 
 auto pe = vh::pe::open("target.dll");
 
@@ -812,7 +812,7 @@ for (auto& m : vh::pe::modules().value_or({}))
 Software (INT3 / VEH) and hardware (DR0–DR3 / DR7) breakpoints with RAII lifetime management.
 
 ```cpp
-#include <vh/breakpoint.hpp>
+#include <vh/breakpoint.vh>
 
 auto sw = vh::breakpoint::set_software(target_address,
     [](uintptr_t addr) { return vh::breakpoint::Action::Continue; });
@@ -831,7 +831,7 @@ hw->apply_to_new_thread(new_thread_handle); // Windows, hardware BPs only
 ## 📚 Call Stack Capture
 
 ```cpp
-#include <vh/callstack.hpp>
+#include <vh/callstack.vh>
 
 auto frames = vh::callstack::capture(/*skip=*/1, /*max_depth=*/32);
 for (auto addr : frames.value_or({}))
@@ -849,7 +849,7 @@ if (ann) printf("%s", vh::callstack::format(*ann).c_str());
 Lock-free ring buffer tracing with zero heap allocation per event and no synchronous I/O on the hook hot path.
 
 ```cpp
-#include <vh/trace.hpp>
+#include <vh/trace.vh>
 
 static vh::Tracer tracer;
 
@@ -947,7 +947,7 @@ printf("produced=%llu  consumed=%llu  dropped=%llu  overflows=%llu\n",
 Live packet capture and protocol parsing. Requires Npcap (Windows) / libpcap (POSIX).
 
 ```cpp
-#include <vh/net.hpp>
+#include <vh/net.vh>
 
 // Live capture
 auto cap = vh::net::Capture::open("eth0").value();
