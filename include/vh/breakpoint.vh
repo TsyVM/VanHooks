@@ -8,7 +8,7 @@
  *
  * Quick start:
  * ────────────
- *   #include <vh/vh.hpp>   // or just <vh/breakpoint.hpp>
+ *   #include <vh/vh.vh>   // or just <vh/breakpoint.hpp>
  *
  *   // Software breakpoint — INT3 + VEH (Windows) / SIGTRAP (Linux)
  *   auto bp = vh::breakpoint::set_software(target_addr, [](uintptr_t addr) {
@@ -35,7 +35,7 @@
  */
 
 #include <vanhooks/breakpoint.hpp>
-#include "result.hpp"
+#include "result.vh"
 
 namespace vh::breakpoint {
 

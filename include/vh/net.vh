@@ -14,7 +14,7 @@
  *
  * Quick start
  * ───────────
- *   #include <vh/vh.hpp>   // pulls net.hpp in automatically
+ *   #include <vh/vh.vh>   // pulls net.hpp in automatically
  *
  *   // Hook something
  *   auto hook = vh::hook(&target, &detour);
@@ -49,7 +49,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "result.hpp"   // vh::Result / vh::Status
+#include "result.vh"   // vh::Result / vh::Status
 
 namespace vh::net {
 

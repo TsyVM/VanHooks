@@ -9,7 +9,7 @@
  *
  * Quick start:
  * ────────────
- *   #include <vh/symbols.hpp>
+ *   #include <vh/symbols.vh>
  *
  *   // Resolve any address to its symbol:
  *   if (auto sym = vh::symbols::resolve(some_address)) {
@@ -46,7 +46,7 @@
 #include <vector>
 
 #include <vanhooks/symbols.hpp>
-#include "result.hpp"
+#include "result.vh"
 
 namespace vh::symbols {
 

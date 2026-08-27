@@ -15,10 +15,12 @@
 
 #include <vanhooks/vanhooks.hpp>
 #include <vanhooks/memory.hpp>
+#include <vanhooks/trampoline.hpp>
 #include <vanhooks/scanner.hpp>
-#include "result.hpp"
-#include "hook.hpp"
-#include "config.hpp"
+#include "result.vh"
+#include "hook.vh"
+#include "detail/callsite_bridge.vh"
+#include "config.vh"
 
 namespace vh {
 
@@ -28,6 +30,12 @@ namespace detail {
     void   engine_queue_disable(vanhooks::Engine*, vanhooks::HookHandle);
     void   engine_queue_remove (vanhooks::Engine*, vanhooks::HookHandle);
     Status engine_apply_queued (vanhooks::Engine*);
+
+    // eng_hook_callsite is declared in detail/callsite_bridge.vh (included above).
+    // HwBp
+    Result<vanhooks::HookHandle> eng_hook_hwbp(vanhooks::Engine*, void* target,
+                                                vanhooks::MidCallback cb,
+                                                vanhooks::HwBpOptions opts);
 } // namespace detail
 
 // ─────────────────────────────────────────────
@@ -86,6 +94,94 @@ public:
         return *this;
     }
 
+    // ── CallSite hook installation ────────────────────────────────────────────
+    //
+    // hook_callsite() patches the 32-bit relative displacement of a single
+    // CALL (E8) or JMP (E9) instruction at site_addr, redirecting only that
+    // one call site to detour.  The original absolute target is written to *orig.
+    //
+    // hook_callsite_pattern() scans for the first match of `pattern`, advances
+    // by `byte_offset` bytes, and treats that address as the E8/E9 site.  If
+    // the pattern is not found the call is a no-op (not an error), mirroring
+    // hook_pattern() behaviour.
+    //
+    //   group.hook_callsite(0x12AB34, &MyDetour, &g_orig);
+    //   group.hook_callsite_pattern("E8 ? ? ? ? 83 C4 04", 0, &MyDetour, &g_orig);
+
+    template<typename Detour>
+    Group& hook_callsite(uintptr_t site_addr, Detour* detour, auto* orig,
+                         vanhooks::CallSiteOptions opts = {})
+    {
+        auto* e = &vanhooks::global_engine();
+        auto r = detail::eng_hook_callsite(
+            e, site_addr,
+            reinterpret_cast<void*>(detour),
+            reinterpret_cast<void**>(orig),
+            opts.thread_safe, std::move(opts.tag));
+        if (r) hooks_.push_back(Hook(*e, *r));
+        return *this;
+    }
+
+    template<typename Detour>
+    Group& hook_callsite_pattern(std::string_view pattern, ptrdiff_t byte_offset,
+                                  Detour* detour, auto* orig,
+                                  vanhooks::CallSiteOptions opts = {})
+    {
+        auto results = vanhooks::scanner::scan_process(pattern);
+        if (results && !results->empty())
+            hook_callsite((*results)[0] + static_cast<uintptr_t>(byte_offset),
+                          detour, orig, std::move(opts));
+        return *this;
+    }
+
+    // match_index overload — hook the Nth match instead of the first.
+    // If results has fewer than match_index+1 entries the call is a no-op.
+    template<typename Detour>
+    Group& hook_callsite_pattern(std::string_view pattern,
+                                  ptrdiff_t byte_offset,
+                                  size_t match_index,
+                                  Detour* detour, auto* orig,
+                                  vanhooks::CallSiteOptions opts = {})
+    {
+        auto results = vanhooks::scanner::scan_process(pattern);
+        if (results && results->size() > match_index)
+            hook_callsite((*results)[match_index] + static_cast<uintptr_t>(byte_offset),
+                          detour, orig, std::move(opts));
+        return *this;
+    }
+
+    // ── Hardware Breakpoint hooks ─────────────────────────────────────────────
+    //
+    // hook_hwbp() installs a HookKind::HwBp hook at the given address.  No bytes
+    // are written to the target function; the hook fires via DR0-DR3 + VEH.
+    // Windows x64 only — silently a no-op on other platforms (same behaviour as
+    // hook_at / hook_callsite when the install returns an error).
+    //
+    //   group.hook_hwbp(0xDEADBEEF, &MyMidCallback);
+    //   group.hook_hwbp(fn_ptr,     &MyMidCallback, { .dr_slot = 1 });
+
+    Group& hook_hwbp(uintptr_t target,
+                     vanhooks::MidCallback          callback,
+                     vanhooks::HwBpOptions          opts = {})
+    {
+        auto* e = &vanhooks::global_engine();
+        auto r = detail::eng_hook_hwbp(
+            e,
+            reinterpret_cast<void*>(target),
+            callback,
+            std::move(opts));
+        if (r) hooks_.push_back(Hook(*e, *r));
+        return *this;
+    }
+
+    template<typename Fn>
+    Group& hook_hwbp(Fn*                            target,
+                     vanhooks::MidCallback          callback,
+                     vanhooks::HwBpOptions          opts = {})
+    {
+        return hook_hwbp(reinterpret_cast<uintptr_t>(target), callback, std::move(opts));
+    }
+
     // ── Memory patch helpers ──────────────────────────────────────────────────
     //
     // patch() writes a typed value to a runtime address, temporarily lifting
@@ -110,13 +206,17 @@ public:
         return *this;
     }
 
-    // nop() fills [addr, addr+count) with 0x90 (x86 NOP) bytes.
+    // nop() fills [addr, addr+count) with Intel-recommended multi-byte NOP
+    // sequences, matching the padding strategy used by the trampoline builder.
+    // Single-byte 0x90 sleds are a detectable fingerprint; multi-byte NOPs are not.
     //
     //   group.nop(0x14E738B, 2);
 
     Group& nop(uintptr_t addr, size_t count)
     {
-        std::vector<uint8_t> nops(count, 0x90);
+        std::vector<uint8_t> nops;
+        nops.reserve(count);
+        vanhooks::trampoline::emit_x64_nops(nops, count);
         vanhooks::memory::write_bytes(
             reinterpret_cast<void*>(addr),
             std::span<const uint8_t>(nops));
@@ -148,6 +248,21 @@ public:
         return *this;
     }
 
+    // match_index overload — hook the Nth match instead of the first.
+    // If results has fewer than match_index+1 entries the call is a no-op.
+    template<typename Fn>
+    Group& hook_pattern(std::string_view pattern, ptrdiff_t offset,
+                        size_t match_index,
+                        Fn* detour, Fn** original = nullptr,
+                        config::Trampoline opts = {})
+    {
+        auto results = vanhooks::scanner::scan_process(pattern);
+        if (results && results->size() > match_index)
+            hook_at((*results)[match_index] + static_cast<uintptr_t>(offset),
+                    detour, original, std::move(opts));
+        return *this;
+    }
+
     // ── Batch lifecycle ───────────────────────────────────────────────────────
 
     Group& enable() {
@@ -169,7 +284,15 @@ public:
     void remove_all() {
         if (hooks_.empty()) return;
         auto* e = engine_ptr();
-        for (auto& h : hooks_) if (h.valid()) detail::engine_queue_remove(e, h.handle());
+        // Remove in reverse insertion order so chain children (added after their
+        // base) are always removed before their base hooks.  This satisfies the
+        // ChainOrderViolation invariant for the common pattern:
+        //   base  = group.add(vh::hook(target, detour_a));   // inserted first
+        //   child = group.add(base.chain(detour_b));         // inserted second
+        // Reverse iteration removes child before base.
+        for (auto it = hooks_.rbegin(); it != hooks_.rend(); ++it) {
+            if (it->valid()) detail::engine_queue_remove(e, it->handle());
+        }
         detail::engine_apply_queued(e);
         hooks_.clear();
     }
@@ -257,7 +380,7 @@ public:
         return it != groups_.end() ? &it->second : nullptr;
     }
 
-    // Fix #4: snapshot group pointers under the lock, then release before
+
     // operating. Thread suspension (inside enable/disable/remove_all) must
     // not happen while we hold the registry mutex — deadlock risk.
     void enable_all() {
@@ -271,10 +394,17 @@ public:
         for (auto* g : ptrs) g->disable();
     }
     void remove_all() {
-        std::vector<Group*> ptrs;
-        { std::lock_guard lock(mutex_); ptrs.reserve(groups_.size()); for (auto& [k,g] : groups_) ptrs.push_back(&g); }
-        for (auto* g : ptrs) g->remove_all();
-        std::lock_guard lock(mutex_); groups_.clear();
+        // Move the map out under the lock so groups are destroyed outside it.
+        // ~Group() calls remove_all() which calls engine_apply_queued(), which
+        // does thread suspension — must not happen while holding registry mutex.
+        std::unordered_map<std::string, Group, StringHash, std::equal_to<>> local;
+        {
+            std::lock_guard lock(mutex_);
+            local = std::move(groups_);
+            // groups_ is now empty; further lookups return nullptr correctly.
+        }
+        // local goes out of scope here — each ~Group() fires exactly once,
+        // with no registry lock held and no double-destroy.
     }
 
     size_t total_hook_count() const {

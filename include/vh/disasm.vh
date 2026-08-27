@@ -9,7 +9,7 @@
  *
  * Quick start:
  * ────────────
- *   #include <vh/disasm.hpp>
+ *   #include <vh/disasm.vh>
  *
  *   // Decode one instruction at a known runtime address:
  *   vh::disasm::Disassembler dis;
@@ -44,7 +44,7 @@
 #include <string>
 
 #include <vanhooks/disasm.hpp>
-#include "result.hpp"
+#include "result.vh"
 
 namespace vh::disasm {
 

@@ -37,6 +37,12 @@ namespace config {
     struct Inject;
 } // namespace config
 
+// CallSiteOptions lives in vanhooks:: (the internal namespace) so forward-declare
+// it there.  vh/vh.hpp pulls in the full definition via vanhooks/vanhooks.hpp.
+} // namespace vh
+namespace vanhooks { struct CallSiteOptions; }
+namespace vh {
+
 namespace pe {
     struct Section;
     struct Export;

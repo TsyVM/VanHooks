@@ -8,7 +8,7 @@
  * and provides the vh::Tracer convenience wrapper that works naturally with
  * vh::Hook and vh::Group, mirroring the rest of the vh:: layer.
  *
- * #include <vh/vh.hpp>  pulls this in automatically when VH_TRACE_ENABLED.
+ * #include <vh/vh.vh>  pulls this in automatically when VH_TRACE_ENABLED.
  * Include it directly only if you need tracing without the full vh:: API.
  *
  * Quick-start example:
@@ -39,8 +39,8 @@
  */
 
 #include <vanhooks/trace.hpp>
-#include <vh/hook.hpp>
-#include <vh/result.hpp>
+#include <vh/hook.vh>
+#include <vh/result.vh>
 
 namespace vh {
 

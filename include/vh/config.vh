@@ -78,13 +78,53 @@ struct Mid {
     std::string tag;
 };
 
+// ─────────────────────────────────────────────
+//  HwBp hook options  (Hardware Breakpoint via DR0-DR3 + VEH)
+//  Windows x64 only; returns Error::Unsupported elsewhere.
+// ─────────────────────────────────────────────
+
+struct HwBp {
+    uint8_t     dr_slot = 0xFF;  // 0-3 or 0xFF (auto-pick first free slot)
+    std::string tag;
+};
+
+// ─────────────────────────────────────────────
+//  PageGuard hook options  (PAGE_GUARD VEH trap)
+//  Windows only; returns Error::Unsupported on POSIX.
+// ─────────────────────────────────────────────
+
+struct PageGuard {
+    vanhooks::PageGuardCondition condition   = vanhooks::PageGuardCondition::Execute;
+    bool                         auto_rearm  = true;
+    std::string                  tag;
+};
+
+// ─────────────────────────────────────────────
+//  Instrumentation Callback options  (Nirvana IC)
+//  Windows x64 only; process-wide singleton.
+// ─────────────────────────────────────────────
+
+struct IC {
+    std::string tag;
+};
+
 } // namespace vh::config
 
 // ─────────────────────────────────────────────
-//  Compatibility guard (fix #5)
+//  Compatibility guard
 //  Verify that vh::config::Trampoline and vanhooks::TrampolineOptions remain
 //  size-compatible. If you add a field to one, add it to the other too.
 // ─────────────────────────────────────────────
 static_assert(sizeof(vh::config::Trampoline) == sizeof(vanhooks::TrampolineOptions),
     "vh::config::Trampoline and vanhooks::TrampolineOptions have diverged — "
     "keep them in sync or remove the deprecated TrampolineOptions.");
+static_assert(alignof(vh::config::Trampoline) == alignof(vanhooks::TrampolineOptions),
+    "vh::config::Trampoline and vanhooks::TrampolineOptions alignment mismatch.");
+static_assert(offsetof(vh::config::Trampoline, thread_safe) ==
+              offsetof(vanhooks::TrampolineOptions, thread_safe),
+    "vh::config::Trampoline::thread_safe and vanhooks::TrampolineOptions::thread_safe "
+    "have different offsets — structs have diverged.");
+
+// Layout guards for new option structs (check dr_slot / condition fields exist at offset 0).
+static_assert(offsetof(vh::config::HwBp,     dr_slot)   == 0);
+static_assert(offsetof(vh::config::PageGuard, condition) == 0);

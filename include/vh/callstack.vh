@@ -8,7 +8,7 @@
  *
  * Quick start — raw addresses:
  * ────────────────────────────
- *   #include <vh/vh.hpp>   // or just <vh/callstack.hpp>
+ *   #include <vh/vh.vh>   // or just <vh/callstack.vh>
  *
  *   auto frames = vh::callstack::capture();
  *   if (frames) {
@@ -31,7 +31,7 @@
  */
 
 #include <vanhooks/callstack.hpp>
-#include "result.hpp"
+#include "result.vh"
 
 namespace vh::callstack {
 

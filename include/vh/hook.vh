@@ -14,7 +14,7 @@
 #include <functional>
 
 #include <vanhooks/vanhooks.hpp>
-#include "result.hpp"
+#include "result.vh"
 
 namespace vh {
 

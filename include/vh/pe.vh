@@ -10,7 +10,7 @@
  *
  * Quick start:
  * ────────────
- *   #include <vh/vh.hpp>
+ *   #include <vh/vh.vh>
  *
  *   // Open any loaded module by name
  *   auto view = vh::pe::open("ntdll.dll");
@@ -48,7 +48,7 @@
  */
 
 #include <vanhooks/pe.hpp>
-#include "result.hpp"
+#include "result.vh"
 
 namespace vh::pe {
 

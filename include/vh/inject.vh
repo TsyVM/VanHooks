@@ -59,8 +59,8 @@
 
 #include <vanhooks/vanhooks.hpp>
 #include <vanhooks/inject.hpp>
-#include "result.hpp"
-#include "config.hpp"
+#include "result.vh"
+#include "config.vh"
 
 namespace vh {
 
