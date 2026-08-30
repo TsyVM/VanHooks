@@ -260,7 +260,7 @@ auto h = vh::mid_hook(&target_fn,
 |---|---|
 | **x64** | `rax`…`r15`, `rflags` — all `uint64_t` |
 | **x86** | `eax`…`edi`, `eflags` — all `uint32_t` |
-| **ARM64** | `x[0]`…`x[7]`, `lr` — all `uint64_t` |
+| **ARM64** | `x[0]`…`x[28]`, `fp`, `lr`, `sp`, `nzcv`, `fpcr`, `fpsr`, `v[0]`…`v[31]` (lo/hi `uint64_t` lanes) |
 
 ### CallSite Hook
 
@@ -335,7 +335,7 @@ auto h = eng.hook_mid_return(
     });
 ```
 
-`ReturnContext` fields (x64): `retval_rax`, `retval_rdx`, `retval_xmm0`, `hook_id`, `real_ret_addr`. Returns `Error::Unsupported` on ARM64 and x86.
+`ReturnContext` fields (x64): `retval_rax`, `retval_rdx`, `retval_xmm0`, `retval_xmm1`, `hook_id`, `real_ret_addr`. Returns `Error::Unsupported` on ARM64 and x86.
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:000000,50:8B0000,100:000000&height=3&section=header"/>
 
@@ -658,8 +658,15 @@ Direct and indirect syscall stubs with automatic SSN resolution (Hell's Gate →
 #include <vh/syscalls.vh>
 
 // Resolve SSN and call NtProtectVirtualMemory directly (no ntdll trampoline)
-auto stub = vh::syscalls::get_stub("NtProtectVirtualMemory",
-                                   vh::syscalls::Mode::Indirect);
+auto stub = vh::syscalls::stub_for("NtProtectVirtualMemory");
+if (!stub) return;
+auto NtProtect = reinterpret_cast<PFN_NtProtect>(*stub);
+
+// Direct instead of indirect (rare):
+auto d = vh::syscalls::stub_for("NtProtectVirtualMemory", vh::syscalls::StubKind::Direct);
+
+// String-free hash form:
+auto h = vh::syscalls::stub_for_hash(vh::syscalls::djb2("NtProtectVirtualMemory"));
 ```
 
 ### Call Stack Spoofing
