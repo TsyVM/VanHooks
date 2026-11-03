@@ -1,11 +1,11 @@
 #pragma once
 
 /**
- * vh/hook.hpp
+ * vh/hook.vh
  * vh::Hook — Universal RAII hook object returned by every hook creation function.
  *
  * Move-only. Destructor calls remove(). Works with the opaque Engine type —
- * all Engine method calls are routed through the internal bridge (hook_impl.hpp)
+ * all Engine method calls are routed through the internal bridge (hook_impl.vh)
  * which is compiled into the library and not shipped in the SDK.
  */
 
@@ -13,7 +13,7 @@
 #include <cstddef>
 #include <functional>
 
-#include <vanhooks/vanhooks.hpp>
+#include <vanhooks/vanhooks.vh>
 #include "result.vh"
 
 namespace vh {
@@ -67,21 +67,32 @@ public:
     ~Hook() { do_remove(); }
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
+    //
+    // enable() / disable() return Hook& for fluent chaining.
+    // Use valid() as the pre-check; operating on an invalid handle is a no-op.
+    // If you need to distinguish the error (e.g. HookAlreadyEnabled), call
+    // advanced::engine().enable(handle()) directly.
 
-    Result<std::reference_wrapper<Hook>> enable() {
-        if (!handle_.valid())
-            return std::unexpected(vanhooks::Error::HookNotFound);
-        auto s = detail::hook_enable(engine_, handle_);
-        if (!s) return std::unexpected(s.error());
-        return std::ref(*this);
+    Hook& enable() noexcept {
+        if (handle_.valid()) (void)detail::hook_enable(engine_, handle_);
+        return *this;
     }
 
-    Result<std::reference_wrapper<Hook>> disable() {
-        if (!handle_.valid())
-            return std::unexpected(vanhooks::Error::HookNotFound);
-        auto s = detail::hook_disable(engine_, handle_);
-        if (!s) return std::unexpected(s.error());
-        return std::ref(*this);
+    Hook& disable() noexcept {
+        if (handle_.valid()) (void)detail::hook_disable(engine_, handle_);
+        return *this;
+    }
+
+    // enable_checked / disable_checked preserve the old Result<> contract for
+    // callers that need to distinguish HookAlreadyEnabled / HookAlreadyDisabled.
+    [[nodiscard]] Status enable_checked() {
+        if (!handle_.valid()) return std::unexpected(vanhooks::Error::HookNotFound);
+        return detail::hook_enable(engine_, handle_);
+    }
+
+    [[nodiscard]] Status disable_checked() {
+        if (!handle_.valid()) return std::unexpected(vanhooks::Error::HookNotFound);
+        return detail::hook_disable(engine_, handle_);
     }
 
     void remove() { do_remove(); }
@@ -127,7 +138,7 @@ private:
 
     void do_remove() noexcept {
         if (handle_.valid() && engine_) {
-            detail::hook_remove(engine_, handle_);
+            (void)detail::hook_remove(engine_, handle_);
             handle_ = {};
         }
     }

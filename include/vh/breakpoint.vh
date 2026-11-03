@@ -1,21 +1,21 @@
 #pragma once
 
 /**
- * vh/breakpoint.hpp — Software and Hardware Breakpoints (public API)
+ * vh/breakpoint.vh — Software and Hardware Breakpoints (public API)
  *
  * Re-exports vanhooks::breakpoint under vh::breakpoint, matching the
- * style of vh/pe.hpp and vh/symbols.hpp.
+ * style of vh/pe.vh and vh/symbols.vh.
  *
  * Quick start:
  * ────────────
- *   #include <vh/vh.vh>   // or just <vh/breakpoint.hpp>
+ *   #include <vh/vh.vh>   // or just <vh/breakpoint.vh>
  *
  *   // Software breakpoint — INT3 + VEH (Windows) / SIGTRAP (Linux)
  *   auto bp = vh::breakpoint::set_software(target_addr, [](uintptr_t addr) {
  *       printf("SW hit @ 0x%llx\n", (unsigned long long)addr);
  *       return vh::breakpoint::Action::Continue;
  *   });
- *   if (!bp) { /* handle error */ }
+ *   if (!bp) { // handle error }
  *
  *   // Hardware breakpoint — DR0-DR3 (x86-64 only)
  *   auto hw = vh::breakpoint::set_hardware(
@@ -34,7 +34,7 @@
  * Requires: VH_BREAKPOINT_ENABLED (set by CMake option VH_ENABLE_BREAKPOINT).
  */
 
-#include <vanhooks/breakpoint.hpp>
+#include <vanhooks/breakpoint.vh>
 #include "result.vh"
 
 namespace vh::breakpoint {

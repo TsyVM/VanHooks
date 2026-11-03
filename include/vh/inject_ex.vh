@@ -1,7 +1,7 @@
 #pragma once
 
 /**
- * vh/inject_ex.vh — Extended injection catalogue (17 techniques).
+ * vh/inject_ex.vh — Extended injection catalogue (20 techniques).
  *
  * Companion to :cpp:enum:`vh::InjectMethod` (which already covers the
  * original 4: LoadLibrary / ManualMap / ThreadHijack / ApcQueue).  This
@@ -47,7 +47,7 @@
  */
 
 #include "result.vh"
-#include <vanhooks/vanhooks.hpp>
+#include <vanhooks/vanhooks.vh>
 
 #include <cstddef>
 #include <cstdint>
@@ -258,4 +258,67 @@ vh::Result<void> eject(RemoteHandle& h) noexcept;
 
 [[nodiscard]] bool technique_available(std::string_view technique) noexcept;
 
+// ─────────────────────────────────────────────
+//  Process manipulation
+// ─────────────────────────────────────────────
+
+/// Options for :cpp:func:`inject_process_hollow`.
+struct HollowOptions {
+    /// If true, NtUnmapViewOfSection the original image before mapping
+    /// the payload.  Default true.
+    bool unmap_original = true;
+    /// If true, patch the PEB.ImageBaseAddress to match the payload's
+    /// preferred base.  Default true.
+    bool patch_peb      = true;
+};
+
+/// Options for :cpp:func:`inject_pool_party`.
+struct PoolPartyOptions {
+    /// Which pool-party variant to use (0 = worker, 1 = timer, 2 = wait,
+    /// 3 = I/O completion).  Default 0 (worker factory insert).
+    std::uint8_t variant = 0;
+};
+
+/// Options for :cpp:func:`inject_ntmapview`.
+struct NtMapViewOptions {
+    /// Section protection for the shared mapping.  Default PAGE_EXECUTE_READ.
+    std::uint32_t protection = 0x20; /* PAGE_EXECUTE_READ */
+};
+
+/**
+ * Process Hollowing (RunPE).  Create target suspended, unmap its image,
+ * map payload PE in its place, fix context to payload's entry point.
+ * Classic — heavily signatured but effective for testing.
+ */
+[[nodiscard]] vh::Result<RemoteHandle>
+inject_process_hollow(std::wstring_view          target_exe,
+                      std::span<const std::uint8_t> pe_bytes,
+                      HollowOptions opts = {}) noexcept;
+
+/**
+ * Pool Party injection.  Abuse Windows Thread Pool internals to queue
+ * shellcode execution without creating a remote thread or APC.
+ * Four variants target different pool objects:
+ *   0 — TpAllocWork   (worker factory)
+ *   1 — TpAllocTimer  (timer callback)
+ *   2 — TpAllocWait   (wait callback)
+ *   3 — TpAllocIo     (I/O completion callback)
+ */
+[[nodiscard]] vh::Result<RemoteHandle>
+inject_pool_party(std::uint32_t pid,
+                  std::span<const std::uint8_t> shellcode,
+                  PoolPartyOptions opts = {}) noexcept;
+
+/**
+ * NtMapViewOfSection injection.  Create a shared section, map it into
+ * both this process and the target, write shellcode into our view
+ * (appears in the target's view), then trigger execution via
+ * NtQueueApcThread.  No VirtualAllocEx / WriteProcessMemory calls.
+ */
+[[nodiscard]] vh::Result<RemoteHandle>
+inject_ntmapview(std::uint32_t pid,
+                 std::span<const std::uint8_t> shellcode,
+                 NtMapViewOptions opts = {}) noexcept;
 } // namespace vh::inject_ex
+
+

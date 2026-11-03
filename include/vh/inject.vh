@@ -1,7 +1,7 @@
 #pragma once
 
 /**
- * vh/inject.hpp — Process Injection public API
+ * vh/inject.vh — Process Injection public API
  *
  * Inject DLLs into remote processes using four methods. All functions
  * return a move-only Injection RAII object that ejects automatically on
@@ -57,8 +57,8 @@
 #include <string>
 #include <string_view>
 
-#include <vanhooks/vanhooks.hpp>
-#include <vanhooks/inject.hpp>
+#include <vanhooks/vanhooks.vh>
+#include <vanhooks/inject.vh>
 #include "result.vh"
 #include "config.vh"
 
@@ -81,7 +81,7 @@ namespace vh::config {
 
 // ─────────────────────────────────────────────
 //  Extends the config:: namespace established
-//  by config.hpp with injection options.
+//  by config.vh with injection options.
 // ─────────────────────────────────────────────
 
 struct Inject {

@@ -1,7 +1,7 @@
 #pragma once
 
 /**
- * vh/trace.hpp
+ * vh/trace.vh
  * VanTrace public API — vh:: namespace surface.
  *
  * This header re-exports the vanhooks::trace:: types under simpler aliases
@@ -38,7 +38,7 @@
  *   }
  */
 
-#include <vanhooks/trace.hpp>
+#include <vanhooks/trace.vh>
 #include <vh/hook.vh>
 #include <vh/result.vh>
 

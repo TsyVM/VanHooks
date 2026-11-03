@@ -25,7 +25,7 @@
  */
 
 #include "result.vh"
-#include <vanhooks/vanhooks.hpp>
+#include <vanhooks/vanhooks.vh>
 
 #include <cstddef>
 #include <cstdint>
@@ -64,5 +64,52 @@ enum Flags : std::uint32_t {
 
 /// Names of currently-unlinked modules.
 [[nodiscard]] std::vector<std::string> unlinked_modules() noexcept;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  LDR / memory integrity validation  (derived from CfAcCompat, NiHooks-CF)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Validate that ``hModule``'s PEB LDR entry has the expected base name.
+ *
+ * Walks ``PEB.Ldr.InMemoryOrderModuleList`` to find the entry whose
+ * ``DllBase`` matches ``hModule``, then compares the last path component of
+ * ``FullDllName`` against ``expected_name`` (case-insensitive).
+ *
+ * Anti-cheat engines (XIGNCODE3, BattlEye) walk the LDR list on every scan
+ * cycle.  A DLL loaded by proxy whose entry shows a mismatched name is
+ * trivially flagged.  Call this during ``DLL_PROCESS_ATTACH`` (before any
+ * hook installation) to confirm the OS loader registered the module under the
+ * name it expects.
+ *
+ * Returns ``true`` if the entry is found and the name matches.
+ * Returns ``false`` if the module is not in the LDR list or the name differs.
+ * Returns ``Error::Unsupported`` on non-Windows platforms.
+ */
+[[nodiscard]] vh::Result<bool> validate_ldr_entry(
+    void*            hModule,
+    std::string_view expected_name) noexcept;
+
+/**
+ * Verify that all committed memory pages belonging to ``hModule`` are
+ * ``MEM_IMAGE`` (not ``MEM_PRIVATE``).
+ *
+ * Kernel-mode anti-cheat drivers (HGWC, Ricochet) flag ``MEM_PRIVATE``
+ * committed pages inside an image range as injected shellcode.  A legitimate
+ * proxy DLL loaded through the Windows loader will have only ``MEM_IMAGE``
+ * regions; any ``MEM_PRIVATE`` page is evidence of post-load patching.
+ *
+ * The watchdog calls this automatically for every hooked module when
+ * ``Config::enable_integrity_watchdog`` and
+ * ``Config::watchdog_check_mem_image`` are both ``true``.
+ *
+ * Returns ``true`` if all committed regions are ``MEM_IMAGE``.
+ * Returns ``false`` and populates ``*out_private_count`` (if non-null) with
+ * the number of offending regions found.
+ * Returns ``Error::Unsupported`` on non-Windows platforms.
+ */
+[[nodiscard]] vh::Result<bool> validate_mem_image(
+    void*     hModule,
+    uint32_t* out_private_count = nullptr) noexcept;
 
 } // namespace vh::peb_mask

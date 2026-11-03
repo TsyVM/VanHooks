@@ -1,7 +1,7 @@
 #pragma once
 
 /**
- * vh/symbols.hpp — Symbol resolution public API
+ * vh/symbols.vh — Symbol resolution public API
  *
  * Resolve virtual addresses to human-readable names and source locations using
  * the platform's native debug-info backend (DbgHelp on Windows, dladdr/libbacktrace
@@ -45,7 +45,7 @@
 #include <string>
 #include <vector>
 
-#include <vanhooks/symbols.hpp>
+#include <vanhooks/symbols.vh>
 #include "result.vh"
 
 namespace vh::symbols {

@@ -1,7 +1,7 @@
 #pragma once
 
 /**
- * vh/pe.hpp — PE Module Introspection public API
+ * vh/pe.vh — PE Module Introspection public API
  *
  * Exposes vanhooks::pe to end users under the vh::pe namespace.
  * Provides structured access to sections, exports, imports, and code caves
@@ -47,7 +47,7 @@
  *   Error::Unsupported on Linux and macOS.
  */
 
-#include <vanhooks/pe.hpp>
+#include <vanhooks/pe.vh>
 #include "result.vh"
 
 namespace vh::pe {

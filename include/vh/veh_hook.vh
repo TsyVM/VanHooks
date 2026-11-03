@@ -19,7 +19,7 @@
  */
 
 #include "result.vh"
-#include <vanhooks/vanhooks.hpp>
+#include <vanhooks/vanhooks.vh>
 
 #include <cstddef>
 #include <cstdint>

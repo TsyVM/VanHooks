@@ -11,7 +11,7 @@
 
 #include <string>
 #include "../result.vh"
-#include <vanhooks/vanhooks.hpp>
+#include <vanhooks/vanhooks.vh>
 
 namespace vh::detail {
     Result<vanhooks::HookHandle> eng_hook_callsite(

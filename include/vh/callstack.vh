@@ -1,10 +1,10 @@
 #pragma once
 
 /**
- * vh/callstack.hpp — Call Stack Capture (public API)
+ * vh/callstack.vh — Call Stack Capture (public API)
  *
  * Re-exports vanhooks::callstack under vh::callstack, matching the
- * style of vh/pe.hpp and vh/symbols.hpp.
+ * style of vh/pe.vh and vh/symbols.vh.
  *
  * Quick start — raw addresses:
  * ────────────────────────────
@@ -30,7 +30,7 @@
  *   Linux / macOS: backtrace() (libc — always linked, no extra dep)
  */
 
-#include <vanhooks/callstack.hpp>
+#include <vanhooks/callstack.vh>
 #include "result.vh"
 
 namespace vh::callstack {

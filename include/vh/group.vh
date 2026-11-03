@@ -1,7 +1,7 @@
 #pragma once
 
 /**
- * vh/group.hpp
+ * vh/group.vh
  * vh::Group  — RAII container owning Hook objects with batch lifecycle management.
  * vh::HookRegistry — Process-wide singleton for named group lookup across modules.
  */
@@ -11,16 +11,20 @@
 #include <vector>
 #include <functional>
 #include <mutex>
+#include <shared_mutex>
 #include <unordered_map>
+#include <optional>
+#include <cassert>
 
-#include <vanhooks/vanhooks.hpp>
-#include <vanhooks/memory.hpp>
-#include <vanhooks/trampoline.hpp>
-#include <vanhooks/scanner.hpp>
+#include <vanhooks/vanhooks.vh>
+#include <vanhooks/memory.vh>
+#include <vanhooks/trampoline.vh>
+#include <vanhooks/scanner.vh>
 #include "result.vh"
 #include "hook.vh"
 #include "detail/callsite_bridge.vh"
 #include "config.vh"
+#include "veh_hook.vh"
 
 namespace vh {
 
@@ -31,11 +35,47 @@ namespace detail {
     void   engine_queue_remove (vanhooks::Engine*, vanhooks::HookHandle);
     Status engine_apply_queued (vanhooks::Engine*);
 
+    // Trampoline (needed by hook_at)
+    Result<vanhooks::HookHandle> eng_hook_trampoline(vanhooks::Engine*, void* target,
+                                                      void* detour, void** orig,
+                                                      bool thread_safe, std::string tag);
+
     // eng_hook_callsite is declared in detail/callsite_bridge.vh (included above).
     // HwBp
     Result<vanhooks::HookHandle> eng_hook_hwbp(vanhooks::Engine*, void* target,
                                                 vanhooks::MidCallback cb,
                                                 vanhooks::HwBpOptions opts);
+    // Delay-load IAT
+    Result<vanhooks::HookHandle> eng_hook_delay_iat(vanhooks::Engine*,
+                                                     std::string_view module,
+                                                     std::string_view import_name,
+                                                     void* detour, std::string tag);
+    // EAT
+    Result<vanhooks::HookHandle> eng_hook_eat(vanhooks::Engine*, std::string_view module,
+                                               std::string_view export_name,
+                                               void* detour, std::string tag);
+    // GOT
+    Result<vanhooks::HookHandle> eng_hook_got(vanhooks::Engine*, std::string_view library,
+                                               std::string_view symbol,
+                                               void* detour, std::string tag);
+    // Syscall
+    Result<vanhooks::HookHandle> eng_hook_syscall(vanhooks::Engine*,
+                                                   std::string_view function_name,
+                                                   void* detour, std::string tag);
+    // TLS callback
+    Result<vanhooks::HookHandle> eng_hook_tls_callback(vanhooks::Engine*, void* module_base,
+                                                        size_t slot,
+                                                        void* detour, std::string tag);
+    // Exception
+    Result<vanhooks::HookHandle> eng_hook_exception(vanhooks::Engine*,
+                                                     vanhooks::ExceptionCallback cb,
+                                                     vanhooks::ExceptionOptions opts);
+    // Thread-local
+    Result<vanhooks::HookHandle> eng_hook_thread_local(vanhooks::Engine*, void* target,
+                                                        void* detour, void** orig,
+                                                        std::string tag);
+    void eng_thread_local_enable (vanhooks::Engine*, vanhooks::HookHandle) noexcept;
+    void eng_thread_local_disable(vanhooks::Engine*, vanhooks::HookHandle) noexcept;
 } // namespace detail
 
 // ─────────────────────────────────────────────
@@ -44,7 +84,37 @@ namespace detail {
 
 class Group {
 public:
-    explicit Group(std::string name = {}) : name_(std::move(name)) {}
+    // Construct with an optional name and an optional engine (defaults to global).
+    explicit Group(std::string name = {},
+                   vanhooks::Engine* engine = nullptr)
+        : name_(std::move(name))
+        , engine_(engine ? engine : &vanhooks::global_engine())
+    {}
+
+    // ── Error visibility ──────────────────────────────────────────────────────
+    //
+    // on_error(cb) registers a callback invoked whenever a hook installation fails.
+    // Returns *this for chaining.  cb is called with the Error before the failed
+    // hook is silently dropped.
+    //
+    //   group.on_error([](vh::Error e) {
+    //       log("hook failed: {}", vh::error_to_string(e));
+    //   }).hook_at(addr, &det);
+
+    using ErrorCallback = std::function<void(vanhooks::Error)>;
+
+    Group& on_error(ErrorCallback cb) {
+        error_cb_ = std::move(cb);
+        return *this;
+    }
+
+    // Returns a snapshot of all errors that occurred since the last call to
+    // clear_errors() (or construction).
+    [[nodiscard]] const std::vector<vanhooks::Error>& errors() const noexcept {
+        return errors_;
+    }
+
+    void clear_errors() { errors_.clear(); }
 
     Group(Group&&) noexcept = default;
     Group& operator=(Group&&) noexcept = default;
@@ -83,14 +153,14 @@ public:
     Group& hook_at(uintptr_t target, Fn* detour, Fn** original = nullptr,
                    config::Trampoline opts = {})
     {
-        auto* e = &vanhooks::global_engine();
         auto r = detail::eng_hook_trampoline(
-            e,
+            engine_,
             reinterpret_cast<void*>(target),
             reinterpret_cast<void*>(detour),
             reinterpret_cast<void**>(original),
             opts.thread_safe, std::move(opts.tag));
-        if (r) hooks_.push_back(Hook(*e, *r));
+        if (r) hooks_.push_back(Hook(*engine_, *r));
+        else    report_error(r.error());
         return *this;
     }
 
@@ -112,13 +182,13 @@ public:
     Group& hook_callsite(uintptr_t site_addr, Detour* detour, auto* orig,
                          vanhooks::CallSiteOptions opts = {})
     {
-        auto* e = &vanhooks::global_engine();
         auto r = detail::eng_hook_callsite(
-            e, site_addr,
+            engine_, site_addr,
             reinterpret_cast<void*>(detour),
             reinterpret_cast<void**>(orig),
             opts.thread_safe, std::move(opts.tag));
-        if (r) hooks_.push_back(Hook(*e, *r));
+        if (r) hooks_.push_back(Hook(*engine_, *r));
+        else    report_error(r.error());
         return *this;
     }
 
@@ -164,13 +234,13 @@ public:
                      vanhooks::MidCallback          callback,
                      vanhooks::HwBpOptions          opts = {})
     {
-        auto* e = &vanhooks::global_engine();
         auto r = detail::eng_hook_hwbp(
-            e,
+            engine_,
             reinterpret_cast<void*>(target),
             callback,
             std::move(opts));
-        if (r) hooks_.push_back(Hook(*e, *r));
+        if (r) hooks_.push_back(Hook(*engine_, *r));
+        else    report_error(r.error());
         return *this;
     }
 
@@ -180,6 +250,94 @@ public:
                      vanhooks::HwBpOptions          opts = {})
     {
         return hook_hwbp(reinterpret_cast<uintptr_t>(target), callback, std::move(opts));
+    }
+
+    // ── Delay-load IAT hook ───────────────────────────────────────────────────
+    //
+    //   group.hook_delay_iat("d3d9.dll", "Direct3DCreate9", &detour);
+
+    Group& hook_delay_iat(std::string_view module, std::string_view import_name,
+                           void* detour, std::string tag = {})
+    {
+        auto r = detail::eng_hook_delay_iat(engine_, module, import_name,
+                                             detour, std::move(tag));
+        if (r) hooks_.push_back(Hook(*engine_, *r));
+        else    report_error(r.error());
+        return *this;
+    }
+
+    // ── EAT hook ──────────────────────────────────────────────────────────────
+    //
+    //   group.hook_eat("ntdll.dll", "NtProtectVirtualMemory", &detour);
+
+    Group& hook_eat(std::string_view module, std::string_view export_name,
+                    void* detour, std::string tag = {})
+    {
+        auto r = detail::eng_hook_eat(engine_, module, export_name, detour, std::move(tag));
+        if (r) hooks_.push_back(Hook(*engine_, *r));
+        else    report_error(r.error());
+        return *this;
+    }
+
+    // ── GOT hook (Linux/macOS) ────────────────────────────────────────────────
+
+    Group& hook_got(std::string_view library, std::string_view symbol,
+                    void* detour, std::string tag = {})
+    {
+        auto r = detail::eng_hook_got(engine_, library, symbol, detour, std::move(tag));
+        if (r) hooks_.push_back(Hook(*engine_, *r));
+        else    report_error(r.error());
+        return *this;
+    }
+
+    // ── Syscall gate hook (Windows x64) ──────────────────────────────────────
+
+    Group& hook_syscall(std::string_view function_name, void* detour, std::string tag = {})
+    {
+        auto r = detail::eng_hook_syscall(engine_, function_name, detour, std::move(tag));
+        if (r) hooks_.push_back(Hook(*engine_, *r));
+        else    report_error(r.error());
+        return *this;
+    }
+
+    // ── TLS callback hook (Windows) ───────────────────────────────────────────
+
+    Group& hook_tls(void* module_base, size_t slot, void* detour, std::string tag = {})
+    {
+        auto r = detail::eng_hook_tls_callback(engine_, module_base, slot,
+                                                detour, std::move(tag));
+        if (r) hooks_.push_back(Hook(*engine_, *r));
+        else    report_error(r.error());
+        return *this;
+    }
+
+    // ── Exception hook ────────────────────────────────────────────────────────
+
+    Group& hook_exception(vanhooks::ExceptionCallback cb, vanhooks::ExceptionOptions opts)
+    {
+        auto r = detail::eng_hook_exception(engine_, cb, std::move(opts));
+        if (r) hooks_.push_back(Hook(*engine_, *r));
+        else    report_error(r.error());
+        return *this;
+    }
+
+    // ── SoftBp (VEH) hook ─────────────────────────────────────────────────────
+
+    Group& hook_softbp(uintptr_t target, vanhooks::MidCallback callback,
+                        veh_hook::Options opts = {})
+    {
+        auto vr = veh_hook::install(reinterpret_cast<void*>(target), callback,
+                                    std::move(opts));
+        if (vr) hooks_.push_back(Hook(*engine_, vanhooks::HookHandle{ vr->id }));
+        else    report_error(vr.error());
+        return *this;
+    }
+
+    template<typename Fn>
+    Group& hook_softbp(Fn* target, vanhooks::MidCallback callback,
+                        veh_hook::Options opts = {})
+    {
+        return hook_softbp(reinterpret_cast<uintptr_t>(target), callback, std::move(opts));
     }
 
     // ── Memory patch helpers ──────────────────────────────────────────────────
@@ -216,8 +374,20 @@ public:
     {
         std::vector<uint8_t> nops;
         nops.reserve(count);
+#if defined(VH_ARCH_ARM64)
+        // ARM64 NOP is 0xD503201F (4 bytes).  Fill aligned slots; truncated
+        // tail is padded with the standard 1-byte hint NOP (0xD503201F >> 24 == 0xD5).
+        const uint32_t arm_nop = 0xD503201Fu;
+        for (size_t i = 0; i + 4 <= count; i += 4) {
+            const auto* b = reinterpret_cast<const uint8_t*>(&arm_nop);
+            nops.insert(nops.end(), b, b + 4);
+        }
+        // Fill remaining bytes with the first byte of the NOP encoding.
+        while (nops.size() < count) nops.push_back(0xD5u);
+#else
         vanhooks::trampoline::emit_x64_nops(nops, count);
-        vanhooks::memory::write_bytes(
+#endif
+        (void)vanhooks::memory::write_bytes(
             reinterpret_cast<void*>(addr),
             std::span<const uint8_t>(nops));
         return *this;
@@ -267,33 +437,24 @@ public:
 
     Group& enable() {
         if (hooks_.empty()) return *this;
-        auto* e = engine_ptr();
-        for (auto& h : hooks_) if (h.valid()) detail::engine_queue_enable(e, h.handle());
-        detail::engine_apply_queued(e);
+        for (auto& h : hooks_) if (h.valid()) detail::engine_queue_enable(engine_, h.handle());
+        (void)detail::engine_apply_queued(engine_);
         return *this;
     }
 
     Group& disable() {
         if (hooks_.empty()) return *this;
-        auto* e = engine_ptr();
-        for (auto& h : hooks_) if (h.valid()) detail::engine_queue_disable(e, h.handle());
-        detail::engine_apply_queued(e);
+        for (auto& h : hooks_) if (h.valid()) detail::engine_queue_disable(engine_, h.handle());
+        (void)detail::engine_apply_queued(engine_);
         return *this;
     }
 
     void remove_all() {
         if (hooks_.empty()) return;
-        auto* e = engine_ptr();
-        // Remove in reverse insertion order so chain children (added after their
-        // base) are always removed before their base hooks.  This satisfies the
-        // ChainOrderViolation invariant for the common pattern:
-        //   base  = group.add(vh::hook(target, detour_a));   // inserted first
-        //   child = group.add(base.chain(detour_b));         // inserted second
-        // Reverse iteration removes child before base.
         for (auto it = hooks_.rbegin(); it != hooks_.rend(); ++it) {
-            if (it->valid()) detail::engine_queue_remove(e, it->handle());
+            if (it->valid()) detail::engine_queue_remove(engine_, it->handle());
         }
-        detail::engine_apply_queued(e);
+        (void)detail::engine_apply_queued(engine_);
         hooks_.clear();
     }
 
@@ -302,20 +463,18 @@ public:
     // ── Queued batch ──────────────────────────────────────────────────────────
 
     Group& queue_enable() {
-        auto* e = engine_ptr();
-        for (auto& h : hooks_) if (h.valid()) detail::engine_queue_enable(e, h.handle());
+        for (auto& h : hooks_) if (h.valid()) detail::engine_queue_enable(engine_, h.handle());
         return *this;
     }
 
     Group& queue_disable() {
-        auto* e = engine_ptr();
-        for (auto& h : hooks_) if (h.valid()) detail::engine_queue_disable(e, h.handle());
+        for (auto& h : hooks_) if (h.valid()) detail::engine_queue_disable(engine_, h.handle());
         return *this;
     }
 
     Status apply() {
         if (hooks_.empty()) return {};
-        return detail::engine_apply_queued(engine_ptr());
+        return detail::engine_apply_queued(engine_);
     }
 
     // ── Introspection ─────────────────────────────────────────────────────────
@@ -347,13 +506,15 @@ public:
     auto end()    const { return hooks_.end(); }
 
 private:
-    std::string       name_;
-    std::vector<Hook> hooks_;
+    std::string              name_;
+    std::vector<Hook>        hooks_;
+    vanhooks::Engine*        engine_;
+    ErrorCallback            error_cb_;
+    std::vector<vanhooks::Error> errors_;
 
-    vanhooks::Engine* engine_ptr() {
-        for (auto& h : hooks_)
-            if (h.valid()) return &h.engine();
-        return &vanhooks::global_engine();
+    void report_error(vanhooks::Error e) {
+        errors_.push_back(e);
+        if (error_cb_) error_cb_(e);
     }
 };
 
@@ -369,46 +530,77 @@ public:
     }
 
     void register_group(Group group) {
-        std::lock_guard lock(mutex_);
+        std::unique_lock lock(mutex_);
         std::string key = group.name();
         groups_.emplace(std::move(key), std::move(group));
     }
 
+    // Raw pointer overload kept for internal / legacy use.
     Group* find_group(std::string_view name) {
-        std::lock_guard lock(mutex_);
-        auto it = groups_.find(name);  // no allocation — transparent lookup
+        std::shared_lock lock(mutex_);
+        auto it = groups_.find(name);
         return it != groups_.end() ? &it->second : nullptr;
     }
 
+    // Safer optional-reference overload for external use.
+    [[nodiscard]]
+    std::optional<std::reference_wrapper<Group>> get(std::string_view name) {
+        std::shared_lock lock(mutex_);
+        auto it = groups_.find(name);
+        if (it == groups_.end()) return std::nullopt;
+        return std::ref(it->second);
+    }
 
-    // operating. Thread suspension (inside enable/disable/remove_all) must
-    // not happen while we hold the registry mutex — deadlock risk.
+    [[nodiscard]]
+    std::optional<std::reference_wrapper<const Group>> get(std::string_view name) const {
+        std::shared_lock lock(mutex_);
+        auto it = groups_.find(name);
+        if (it == groups_.end()) return std::nullopt;
+        return std::cref(it->second);
+    }
+
+    // operator[] — same as get() but asserts on miss (debug builds only).
+    Group& operator[](std::string_view name) {
+        auto opt = get(name);
+        assert(opt.has_value() && "HookRegistry::operator[]: group not found");
+        return opt->get();
+    }
+
+    // Thread suspension (inside enable/disable/remove_all) must not happen
+    // while we hold the registry mutex — hence the copy-under-lock pattern.
     void enable_all() {
         std::vector<Group*> ptrs;
-        { std::lock_guard lock(mutex_); ptrs.reserve(groups_.size()); for (auto& [k,g] : groups_) ptrs.push_back(&g); }
+        {
+            std::shared_lock lock(mutex_);
+            ptrs.reserve(groups_.size());
+            for (auto& [k,g] : groups_) ptrs.push_back(&g);
+        }
         for (auto* g : ptrs) g->enable();
     }
     void disable_all() {
         std::vector<Group*> ptrs;
-        { std::lock_guard lock(mutex_); ptrs.reserve(groups_.size()); for (auto& [k,g] : groups_) ptrs.push_back(&g); }
+        {
+            std::shared_lock lock(mutex_);
+            ptrs.reserve(groups_.size());
+            for (auto& [k,g] : groups_) ptrs.push_back(&g);
+        }
         for (auto* g : ptrs) g->disable();
     }
     void remove_all() {
-        // Move the map out under the lock so groups are destroyed outside it.
-        // ~Group() calls remove_all() which calls engine_apply_queued(), which
-        // does thread suspension — must not happen while holding registry mutex.
+        // Move the map out under an exclusive lock so groups are destroyed outside it.
+        // ~Group() calls remove_all() → engine_apply_queued() → thread suspension;
+        // that must not happen while holding the registry mutex.
         std::unordered_map<std::string, Group, StringHash, std::equal_to<>> local;
         {
-            std::lock_guard lock(mutex_);
+            std::unique_lock lock(mutex_);
             local = std::move(groups_);
-            // groups_ is now empty; further lookups return nullptr correctly.
         }
         // local goes out of scope here — each ~Group() fires exactly once,
         // with no registry lock held and no double-destroy.
     }
 
     size_t total_hook_count() const {
-        std::lock_guard lock(mutex_);
+        std::shared_lock lock(mutex_);
         size_t n = 0;
         for (const auto& [k,g] : groups_) n += g.size();
         return n;
@@ -426,7 +618,7 @@ private:
         size_t operator()(const std::string& s)  const noexcept { return std::hash<std::string>{}(s); }
     };
 
-    mutable std::mutex mutex_;
+    mutable std::shared_mutex mutex_;
     std::unordered_map<std::string, Group, StringHash, std::equal_to<>> groups_;
 };
 

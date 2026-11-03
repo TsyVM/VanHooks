@@ -1,12 +1,12 @@
 #pragma once
 
 /**
- * vh/result.hpp
+ * vh/result.vh
  * Result<T> and Status type aliases for the vh:: API.
  * These are direct re-exports of the vanhooks:: types — no new types, no overhead.
  */
 
-#include <vanhooks/vanhooks.hpp>
+#include <vanhooks/vanhooks.vh>
 
 namespace vh {
 

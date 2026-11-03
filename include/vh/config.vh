@@ -1,7 +1,7 @@
 #pragma once
 
 /**
- * vh/config.hpp
+ * vh/config.vh
  * Simplified, discoverable configuration structs under vh::config::.
  *
  * These replace the verbose TrampolineOptions / IATOptions / PLTOptions /
@@ -13,7 +13,7 @@
 #include <string_view>
 #include <cstddef>
 
-#include <vanhooks/vanhooks.hpp>
+#include <vanhooks/vanhooks.vh>
 
 namespace vh::config {
 
@@ -24,6 +24,8 @@ namespace vh::config {
 struct Trampoline {
     bool        thread_safe = true;  // suspend threads during patch (recommended)
     std::string tag;
+
+    [[nodiscard]] constexpr bool valid() const noexcept { return true; }
 };
 
 // ─────────────────────────────────────────────
@@ -86,6 +88,10 @@ struct Mid {
 struct HwBp {
     uint8_t     dr_slot = 0xFF;  // 0-3 or 0xFF (auto-pick first free slot)
     std::string tag;
+
+    [[nodiscard]] constexpr bool valid() const noexcept {
+        return dr_slot == 0xFF || dr_slot <= 3;
+    }
 };
 
 // ─────────────────────────────────────────────
@@ -97,6 +103,8 @@ struct PageGuard {
     vanhooks::PageGuardCondition condition   = vanhooks::PageGuardCondition::Execute;
     bool                         auto_rearm  = true;
     std::string                  tag;
+
+    [[nodiscard]] constexpr bool valid() const noexcept { return true; }
 };
 
 // ─────────────────────────────────────────────
@@ -106,6 +114,97 @@ struct PageGuard {
 
 struct IC {
     std::string tag;
+
+    [[nodiscard]] constexpr bool valid() const noexcept { return true; }
+};
+
+// ─────────────────────────────────────────────
+//  EAT hook options
+// ─────────────────────────────────────────────
+
+struct EAT {
+    std::string_view module_name;
+    std::string_view export_name;
+    std::string      tag;
+
+    [[nodiscard]] constexpr bool valid() const noexcept {
+        return !module_name.empty() && !export_name.empty();
+    }
+};
+
+// ─────────────────────────────────────────────
+//  GOT hook options  (Linux/macOS)
+// ─────────────────────────────────────────────
+
+struct GOT {
+    std::string_view library_name;
+    std::string_view symbol_name;
+    std::string      tag;
+
+    [[nodiscard]] constexpr bool valid() const noexcept {
+        return !library_name.empty() && !symbol_name.empty();
+    }
+};
+
+// ─────────────────────────────────────────────
+//  Syscall gate hook options  (Windows x64 only)
+// ─────────────────────────────────────────────
+
+struct Syscall {
+    std::string_view function_name;  // e.g. "NtProtectVirtualMemory"
+    std::string      tag;
+
+    [[nodiscard]] constexpr bool valid() const noexcept {
+        return !function_name.empty();
+    }
+};
+
+// ─────────────────────────────────────────────
+//  TLS callback hook options  (Windows only)
+// ─────────────────────────────────────────────
+
+struct TlsCallback {
+    void*       module_base = nullptr;  // null = self
+    size_t      slot        = 0;
+    std::string tag;
+
+    [[nodiscard]] constexpr bool valid() const noexcept { return true; }
+};
+
+// ─────────────────────────────────────────────
+//  Exception hook options
+// ─────────────────────────────────────────────
+
+struct Exception {
+    uint32_t    exc_code  = 0;
+    uintptr_t   addr_low  = 0;
+    uintptr_t   addr_high = 0;
+    std::string tag;
+
+    [[nodiscard]] constexpr bool valid() const noexcept {
+        return exc_code != 0;
+    }
+};
+
+// ─────────────────────────────────────────────
+//  Thread-local hook options
+// ─────────────────────────────────────────────
+
+struct ThreadLocal {
+    bool        thread_safe = true;
+    std::string tag;
+
+    [[nodiscard]] constexpr bool valid() const noexcept { return true; }
+};
+
+// ─────────────────────────────────────────────
+//  SoftBp / VEH hook options
+// ─────────────────────────────────────────────
+
+struct SoftBp {
+    std::string tag;
+
+    [[nodiscard]] constexpr bool valid() const noexcept { return true; }
 };
 
 } // namespace vh::config

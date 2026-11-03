@@ -61,7 +61,7 @@
  */
 
 #include "result.vh"
-#include <vanhooks/vanhooks.hpp>
+#include <vanhooks/vanhooks.vh>
 
 #include <cstdint>
 #include <string_view>
@@ -78,6 +78,15 @@ enum class ResolveMode : std::uint8_t {
     Hell,       ///< Only read SSN from the stub prologue.  Fails on hooked stubs.
     Halo,       ///< Only derive SSN from neighbours.  Works past hooks.
     Tartarus,   ///< Halo with an unbounded expansion radius.
+    /// Load a private clean copy of ntdll.dll from disk into a MEM_PRIVATE
+    /// mapping and resolve the SSN directly from that image's stub bytes.
+    /// Immune to all in-process hook forms (inline, IAT, trampoline) because
+    /// the copy is never registered with the loader and is never executed —
+    /// it is read-only for SSN extraction only.  Slower than the other modes
+    /// (file I/O + PE parsing on first call) but the result is cached
+    /// process-wide so subsequent calls are hash-table hits.
+    /// Falls back to Tartarus if the file mapping fails.
+    FreshNtdll,
 };
 
 /// Which kind of stub :cpp:func:`stub_for` / :cpp:func:`build_stub` emits.

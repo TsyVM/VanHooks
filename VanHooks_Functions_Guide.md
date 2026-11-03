@@ -1,62 +1,98 @@
-<div align="center">
-<img width="100%" src="https://capsule-render.vercel.app/api?type=waving&color=0:0A0A0A,50:7A0C0C,100:0A0A0A&height=170&section=header&text=Functions%20Guide&fontSize=48&fontColor=FF4444&animation=fadeIn&fontAlignY=40&desc=Public%20API%20Reference%20%C2%B7%20v0.2.0&descAlignY=62&descSize=14&descColor=B8B8B8"/>
+# VanHooks — Functions Guide
 
-[![Standard](https://img.shields.io/badge/C%2B%2B-23-FF4444?style=flat-square&labelColor=0A0A0A)](https://en.cppreference.com/w/cpp/23)
-[![Windows](https://img.shields.io/badge/Windows-x86%20%7C%20x64-FF4444?style=flat-square&labelColor=0A0A0A)](lib/)
-[![Linux](https://img.shields.io/badge/Linux-x64%20%7C%20ARM64-FF4444?style=flat-square&labelColor=0A0A0A)](lib/)
-[![macOS](https://img.shields.io/badge/macOS-x64%20%7C%20ARM64-FF4444?style=flat-square&labelColor=0A0A0A)](lib/)
+**Public API Reference · v0.1.0**  
+C++23 · Windows / Linux / macOS · x86 / x64 / ARM64
 
-</div>
+---
 
-<br/>
-
-VanHooks is distributed as **precompiled static libraries with public API headers**. Everything documented here is available through those headers and the matching `.lib`. One include, all platforms.
+One include is all you need:
 
 ```cpp
-#include <vh/vh.hpp>
+#include <vh/vh.vh>
 ```
 
----
-
-## Contents
-
-[Glossary](#glossary) · [Result Type](#result-type) · [Level 1 API](#level-1-api) · [Level 2 API](#level-2-api) · [Hook Object](#hook-object) · [Group](#group) · [HookRegistry](#hookregistry) · [Config Structs](#config-structs) · [Engine Access](#engine-access) · [Shutdown](#shutdown) · [Error Codes](#error-codes) · [Pattern Scanner](#pattern-scanner) · [Anti-Debug Detection](#anti-debug-detection) · [Disassembler](#disassembler) · [Process Injection](#process-injection) · [Stealth Subsystems](#stealth-subsystems) · [Telemetry Suppression](#telemetry-suppression) · [Symbol Resolution](#symbol-resolution) · [PE Introspection](#pe-introspection) · [Breakpoints](#breakpoints) · [Call Stack Capture](#call-stack-capture) · [VanTrace](#vantrace) · [Network API](#network-api) · [Quick Reference](#quick-reference)
+Everything in this document lives in the `vh::` namespace unless stated otherwise.
 
 ---
 
-## Glossary
+## Table of Contents
 
-| Term | Meaning |
-|---|---|
-| **Hook** | Both the act of interception and the RAII object representing it. Owns the interception for its lifetime; removes it automatically on destruction. |
-| **Target** | The function or address being intercepted. |
-| **Detour** | Your replacement function. Must match the target's calling convention and signature exactly. |
-| **Original** | A function pointer VanHooks fills in so your detour can call through to the real function. |
-| **Call Site** | A single `CALL` (E8) or `JMP` (E9) instruction in the caller's code. A CallSite hook patches only this one instruction's displacement, leaving the target function's prologue untouched. |
-| **Enable** | Activate a hook so calls to the target go to the detour. Default state when created. |
-| **Disable** | Deactivate a hook without removing it. Target behaves as unhooked; the object remains valid. |
-| **Remove** | Permanently uninstall a hook and release all resources. The `Hook` destructor does this automatically. |
-| **AttachedHook** | A VanTrace handle representing one hook registered with a `Tracer`. Returned by `Tracer::attach()`. |
-| **CallScope** | RAII guard that calls `AttachedHook::enter()` on construction and `exit()` on destruction. |
+1. [Legend](#part-i--legend)
+2. [Result Type and Error Handling](#part-ii--result-type-and-error-handling)
+3. [Level 1 API — One-line hooks](#part-iii--level-1-api)
+4. [Level 2 API — Explicit hook types](#part-iv--level-2-api)
+5. [Hook Object Methods](#part-v--hook-object-methods)
+6. [Group](#part-vi--group)
+7. [HookRegistry](#part-vii--hookregistry)
+8. [Configuration Structs](#part-viii--configuration-structs)
+9. [Error Codes](#part-ix--error-codes)
+10. [Quick Reference](#part-x--quick-reference-card)
+11. [Process Injection](#part-xi--process-injection)
+12. [Stealth Helpers](#part-xii--stealth-helpers-vhinject_stealth)
 
 ---
 
-## Result Type
+## Part I — Legend
 
-Every hook creation function returns `Result<Hook>`. `Result<T>` is an alias for `std::expected<T, vh::Error>` — no exceptions, no global error state, zero overhead on the success path.
+Seven words. Everything else is detail.
+
+### HOOK
+
+Both the act of interception and the object that represents it. When you "hook a function" you are redirecting it so that your code runs instead of (or before) the original. The `vh::Hook` object is what you get back — it owns the interception for as long as it lives, and removes it automatically when it is destroyed.
+
+### TARGET
+
+The function or address being intercepted. You point VanHooks at the target and it installs the redirection. The target keeps working normally if you call it through the Original (see below); otherwise calls to it go to your Detour instead.
+
+### DETOUR
+
+Your replacement function. It must have the same calling convention and signature as the target. When the target is called, execution jumps to your detour first. You decide what happens from there: call the original, modify arguments, block the call entirely, log it, or anything else.
+
+### ORIGINAL
+
+A pointer through which you can call the target as if the hook were not there. VanHooks sets this up automatically. You declare a function pointer of the same type as the target, pass its address when creating the hook, and VanHooks fills it in. After that, calling through that pointer bypasses the detour and reaches the real function.
+
+### ENABLE
+
+Activate a hook so that calls to the target go to your detour. Hooks are enabled by default when created. You can disable and re-enable a hook without removing it, which is useful for temporarily restoring original behaviour.
+
+### DISABLE
+
+Deactivate a hook without removing it. The target function behaves as if the hook were never installed. The hook object still exists and can be re-enabled. Resources are retained. This is cheaper than remove followed by reinstall.
+
+### REMOVE
+
+Permanently uninstall a hook and release all resources associated with it. The `Hook` object becomes invalid after `remove()`. In normal use you do not call this manually — the `Hook` destructor calls it for you (RAII).
+
+---
+
+## Part II — Result Type and Error Handling
+
+Every hook creation function returns `Result<Hook>`, not `Hook` directly. `Result<T>` is an alias for `std::expected<T, vh::Error>`.
+
+### Checking for success
 
 ```cpp
 auto r = vh::hook(&my_fn, &my_detour);
 
 if (!r) {
+    // r.error() is a vh::Error code
     printf("failed: %s\n", vh::error_to_string(r.error()).data());
     return;
 }
 
+// r.value() or *r is the Hook
 vh::Hook h = std::move(*r);
 ```
 
-**Chaining with `.and_then()`:**
+### Checking validity after the fact
+
+```cpp
+auto r = vh::hook(&fn, &detour);
+if (r && r->valid()) { /* use it */ }
+```
+
+### Chaining with `.and_then()` / `.transform()`
 
 ```cpp
 auto r = vh::hook(&fn, &detour, &orig)
@@ -66,55 +102,78 @@ auto r = vh::hook(&fn, &detour, &orig)
     });
 ```
 
-**`error_to_string`:**
+### `error_to_string`
 
 ```cpp
 std::string_view vh::error_to_string(vh::Error e) noexcept;
 ```
 
-Returns a human-readable name for any `Error` code as a `string_view` into static storage.
+Returns a human-readable name for any `Error` code. Useful for logging. The returned `string_view` points to static storage — do not free it.
 
 ---
 
-## Level 1 API
+## Part III — Level 1 API
+
+*Beginner — one line, zero concepts required.*
+
+These three overloads of `vh::hook()` cover the most common cases. No options struct needed.
+
+---
 
 ### `vh::hook(target, detour)`
 
 ```cpp
 template<typename Fn>
 Result<Hook> vh::hook(Fn* target, Fn* detour);
-
-template<typename Fn>
-Result<Hook> vh::hook(uintptr_t target, Fn* detour);
 ```
 
-Intercepts `target` so calls go to `detour`. No call-through. The `uintptr_t` overload accepts a runtime-resolved address without requiring a `reinterpret_cast` at the call site.
+The simplest form. Intercept `target` so that every call goes to `detour` instead. The hook is enabled immediately. No original pointer — if you need to call through to the real function, use the three-argument form below.
+
+| Parameter | Description |
+|---|---|
+| `target` | Pointer to the function to intercept. Must not be null. |
+| `detour` | Pointer to your replacement function. Same signature as `target`. |
+
+**Returns:** `Result<Hook>`. On success, the Hook is valid and the interception is live. On failure, check `.error()` for the reason.
+
+```cpp
+int detour_add(int a, int b) {
+    printf("add intercepted\n");
+    return a + b;
+}
+
+auto h = vh::hook(&add, &detour_add);
+```
+
+---
 
 ### `vh::hook(target, detour, original_out)`
 
 ```cpp
 template<typename Fn>
 Result<Hook> vh::hook(Fn* target, Fn* detour, Fn** original_out);
-
-template<typename Fn>
-Result<Hook> vh::hook(uintptr_t target, Fn* detour, Fn** original_out);
 ```
 
-Same, but fills `*original_out` with the trampoline address.
+Same as above, but also sets up a call-through pointer so your detour can invoke the real function. VanHooks writes the trampoline address into `*original_out` when the hook is successfully installed.
+
+| Parameter | Description |
+|---|---|
+| `target` | Pointer to the function to intercept. |
+| `detour` | Pointer to your replacement function. |
+| `original_out` | Address of a function pointer variable. Declare as `static Fn* orig = nullptr;`. VanHooks fills this in on success. |
 
 ```cpp
 static int (*orig_add)(int, int) = nullptr;
 
 int detour_add(int a, int b) {
     printf("add(%d, %d)\n", a, b);
-    return orig_add(a, b);
+    return orig_add(a, b);   // call through to the real function
 }
 
-auto r = vh::hook(&add, &detour_add, &orig_add);
-
-// Runtime address form — common in game modding
-auto r2 = vh::hook(0x5D5DB0u, &detour_add, &orig_add);
+auto h = vh::hook(&add, &detour_add, &orig_add);
 ```
+
+---
 
 ### `vh::hook(module, symbol, detour, original_out)`
 
@@ -126,7 +185,14 @@ Result<Hook> vh::hook(std::string_view module,
                       Fn** original_out = nullptr);
 ```
 
-Resolves the target by module and symbol name (`GetProcAddress` / `dlsym`), then installs an inline hook.
+Hook a function by name instead of by pointer. VanHooks resolves the address using `GetModuleHandle` + `GetProcAddress` on Windows, or `dlsym` on Linux and macOS. Useful when you cannot take the address of the function at compile time — system functions, functions in loaded DLLs, and so on.
+
+| Parameter | Description |
+|---|---|
+| `module` | Module name. On Windows: `"user32"` or `"user32.dll"` (either form works). On Linux/macOS: the shared library name, e.g. `"libm.so.6"` or `"libm"`. |
+| `symbol` | Exported function name, e.g. `"MessageBoxW"` or `"malloc"`. |
+| `detour` | Pointer to your replacement function. |
+| `original_out` | Optional. Same as the three-argument form above. |
 
 ```cpp
 static decltype(&MessageBoxW) orig_mbw = nullptr;
@@ -135,12 +201,18 @@ BOOL WINAPI hk_mbw(HWND h, LPCWSTR t, LPCWSTR c, UINT f) {
     return orig_mbw(h, L"[Intercepted]", c, f);
 }
 
-auto r = vh::hook("user32", "MessageBoxW", &hk_mbw, &orig_mbw);
+auto hook = vh::hook("user32", "MessageBoxW", &hk_mbw, &orig_mbw);
 ```
 
 ---
 
-## Level 2 API
+## Part IV — Level 2 API
+
+*Explicit hook types — same `Hook` object, more control.*
+
+These functions name the hook kind explicitly and accept an options struct for configuration. They all return the same `Result<Hook>` type. Use these when you need a tag, need to control thread suspension, or when the hook kind matters to your code's clarity.
+
+---
 
 ### `vh::inline_hook`
 
@@ -150,15 +222,20 @@ Result<Hook> vh::inline_hook(Fn* target,
                              Fn* detour,
                              Fn** original_out = nullptr,
                              config::Trampoline opts = {});
-
-template<typename Fn>
-Result<Hook> vh::inline_hook(uintptr_t target,
-                             Fn* detour,
-                             Fn** original_out = nullptr,
-                             config::Trampoline opts = {});
 ```
 
-Patches the first bytes of `target` with a jump and builds a trampoline. The `uintptr_t` overload works identically to the pointer form; use it when the address came from a pattern scan or version table. Options: [`config::Trampoline`](#configtrampoline).
+Patches the first bytes of `target` with a jump to `detour`, and builds a trampoline so the original can still be called. This is the most common hook type and works on any function whose prologue is long enough to hold a jump instruction (5 bytes on x86/x64, 16 bytes on ARM64).
+
+The compiler-enforced template means `target` and `detour` must have the same function type. Mismatches are compile errors, not runtime crashes.
+
+**Options:** [`vh::config::Trampoline`](#vhconfigtrampoline)
+
+```cpp
+auto h = vh::inline_hook(&add, &detour_add, &orig_add,
+                         { .tag = "Math.add" });
+```
+
+---
 
 ### `vh::api_hook`
 
@@ -171,7 +248,17 @@ Result<Hook> vh::api_hook(std::string_view module,
                           config::Trampoline opts = {});
 ```
 
-Resolves the target by module and symbol name, then installs an inline hook.
+Resolves `target` by module and symbol name, then installs an inline hook. Equivalent to `vh::hook(module, symbol, detour, original_out)` but accepts the full options struct.
+
+**Options:** [`vh::config::Trampoline`](#vhconfigtrampoline)
+
+```cpp
+auto h = vh::api_hook("user32", "MessageBoxW",
+                      &hk_mbw, &orig_mbw,
+                      { .thread_safe = true, .tag = "User32.MessageBoxW" });
+```
+
+---
 
 ### `vh::vtable_hook`
 
@@ -183,20 +270,38 @@ Result<Hook> vh::vtable_hook(void** vtable,
                              config::VTable opts = {});
 ```
 
-Patches a single slot in a C++ virtual function table. Slots are zero-indexed in declaration order. `original_out` is accepted for API consistency but VTable hooks do not produce a callable trampoline stub — to call the original, save the vtable pointer yourself before installing the hook.
+Patches a single slot in a C++ virtual function table. Use this when the function you want to intercept is a virtual method and you have a pointer to an object of that class (or to the vtable directly).
+
+A vtable is an array of function pointers that C++ uses to dispatch virtual calls. Each slot corresponds to one virtual method in declaration order. Slot 0 is the first virtual method, slot 1 the second, and so on. Inherited virtual methods appear first; the derived class's own virtuals follow.
+
+| Parameter | Description |
+|---|---|
+| `vtable` | Pointer to the vtable array. Obtain with: `void** vtbl = *reinterpret_cast<void***>(object_pointer);` |
+| `slot` | Zero-based index of the virtual method to replace. |
+| `detour` | Replacement function. Must match the virtual method's signature, including the implicit `this` pointer as the first argument. |
+| `original_out` | Optional. Filled with a callable pointer to the original slot value. |
+
+**Options:** [`vh::config::VTable`](#vhconfigvtable)
 
 ```cpp
+// Hook IDXGISwapChain::Present (slot 8 in the DXGI vtable)
 void** vtbl = *reinterpret_cast<void***>(swap_chain);
 
-static HRESULT (STDMETHODCALLTYPE *orig_Present)(IDXGISwapChain*, UINT, UINT) =
-    reinterpret_cast<decltype(orig_Present)>(vtbl[8]);
+static HRESULT (STDMETHODCALLTYPE *orig_Present)
+    (IDXGISwapChain*, UINT, UINT) = nullptr;
 
 HRESULT STDMETHODCALLTYPE hk_Present(IDXGISwapChain* sc, UINT sync, UINT flags) {
+    // render overlay here
     return orig_Present(sc, sync, flags);
 }
 
-auto r = vh::vtable_hook(vtbl, 8, (void*)&hk_Present, nullptr, { .tag = "DXGI.Present" });
+auto h = vh::vtable_hook(vtbl, 8,
+                         (void*)&hk_Present,
+                         (void**)&orig_Present,
+                         { .tag = "DXGI.Present" });
 ```
+
+---
 
 ### `vh::iat_hook`
 
@@ -206,7 +311,24 @@ Result<Hook> vh::iat_hook(std::string_view import_name,
                           config::IAT opts = {});
 ```
 
-**Windows only.** Patches one IAT entry. `opts.module_name` restricts the patch to a single module; leave empty to target all loaded modules. Options: [`config::IAT`](#configiat).
+**Windows only.** Patches an Import Address Table entry so that calls from a specific module to `import_name` go to your `detour` instead. Unlike an inline hook, this does not modify the target function itself — it modifies the pointer that the calling module uses to reach it.
+
+Use this when you want to intercept calls from one specific module without affecting every other caller of the same function, or when the target function is too short to inline-hook safely.
+
+| Parameter | Description |
+|---|---|
+| `import_name` | The exported symbol name to redirect, e.g. `"MessageBoxW"`. |
+| `detour` | Replacement function pointer (`void*`). |
+
+**Options:** [`vh::config::IAT`](#vhconfigiat)
+
+```cpp
+auto h = vh::iat_hook("MessageBoxW", (void*)&hk_mbw,
+                      { .module_name = "my_app.exe",
+                        .tag = "IAT.MessageBoxW" });
+```
+
+---
 
 ### `vh::iat_hook_all`
 
@@ -216,7 +338,18 @@ Result<std::vector<Hook>> vh::iat_hook_all(std::string_view import_name,
                                            config::IAT opts = {});
 ```
 
-**Windows only.** Patches every IAT entry matching `import_name` across all loaded modules.
+**Windows only.** Same as `iat_hook`, but patches every IAT entry matching `import_name` across all loaded modules simultaneously. Returns a vector of `Hook` objects, one per patched slot. Useful for functions like `malloc` or `VirtualAlloc` whose IAT entry appears in many DLLs.
+
+`module_name` in the options struct is ignored here — all modules are searched.
+
+```cpp
+auto hooks = vh::iat_hook_all("malloc", (void*)&hk_malloc);
+if (hooks) {
+    printf("patched %zu IAT slots\n", hooks->size());
+}
+```
+
+---
 
 ### `vh::plt_hook`
 
@@ -227,7 +360,32 @@ Result<Hook> vh::plt_hook(std::string_view library,
                           config::PLT opts = {});
 ```
 
-**Linux and macOS only.** Patches a PLT entry or lazy pointer.
+**Linux and macOS only.** Patches a Procedure Linkage Table (Linux) or lazy pointer (macOS) entry in the dynamic linker so calls to `symbol` from the specified library are redirected to your detour.
+
+This is the POSIX equivalent of `iat_hook`. It intercepts dynamic linker indirection rather than the function itself, making it safe for functions whose prologues are too short to inline-hook.
+
+| Parameter | Description |
+|---|---|
+| `library` | The shared library name, e.g. `"libc"` or `"libpthread"`. |
+| `symbol` | The symbol name, e.g. `"malloc"` or `"pthread_create"`. |
+| `detour` | Replacement function pointer (`void*`). |
+
+**Options:** [`vh::config::PLT`](#vhconfigplt)
+
+```cpp
+static void* (*orig_malloc)(size_t) = nullptr;
+
+void* hk_malloc(size_t size) {
+    void* p = orig_malloc(size);
+    printf("malloc(%zu) = %p\n", size, p);
+    return p;
+}
+
+auto h = vh::plt_hook("libc", "malloc", (void*)&hk_malloc,
+                      { .tag = "libc.malloc" });
+```
+
+---
 
 ### `vh::mid_hook`
 
@@ -237,7 +395,16 @@ Result<Hook> vh::mid_hook(void* target,
                           config::Mid opts = {});
 ```
 
-Installs a callback at a byte offset inside a function (`opts.offset`). Does not redirect control flow — exposes CPU register state at that instruction boundary.
+Installs a hook at a specific byte offset inside a function rather than at its entry point. Unlike all other hook types, a mid-function hook does not redirect control flow — it observes and optionally modifies CPU register state at the chosen instruction boundary, then lets the original instructions continue executing.
+
+The hook site is rounded up to the nearest complete instruction boundary so that no instruction is split.
+
+| Parameter | Description |
+|---|---|
+| `target` | Pointer to the start of the function containing the hook site. |
+| `callback` | Function called at the hook site. Receives a `MidContext*` holding a snapshot of all general-purpose registers and flags. Must be `noexcept`. Must not throw. |
+
+**Options:** [`vh::config::Mid`](#vhconfigmid)
 
 **`MidCallback` signature:**
 
@@ -245,343 +412,179 @@ Installs a callback at a byte offset inside a function (`opts.offset`). Does not
 using MidCallback = void (*)(MidContext*) noexcept;
 ```
 
-**`MidContext` fields:**
+**`MidContext` fields — x64:**
 
-| Architecture | Fields |
-|---|---|
-| x64 | `rax`…`r15`, `rflags` — all `uint64_t` |
-| x86 | `eax`…`edi`, `eflags` — all `uint32_t` |
-| ARM64 | `x[0]`…`x[7]`, `lr` — all `uint64_t` |
+| Field | Type | Description |
+|---|---|---|
+| `rax` … `r15` | `uint64_t` | General-purpose registers |
+| `rflags` | `uint64_t` | CPU flags |
 
-Writes take effect when the callback returns.
+**`MidContext` fields — ARM64:**
+
+| Field | Type | Description |
+|---|---|---|
+| `x[8]` | `uint64_t[8]` | Argument registers x0–x7 |
+| `lr` | `uint64_t` | Link register (x30) |
+
+**`MidContext` fields — x86:**
+
+| Field | Type | Description |
+|---|---|---|
+| `eax` … `edi` | `uint32_t` | General-purpose registers |
+| `eflags` | `uint32_t` | CPU flags |
+
+Read a register: `ctx->rax`  
+Write a register: `ctx->rax = new_value` — takes effect when the callback returns.
 
 ```cpp
-auto r = vh::mid_hook(&game_update,
+auto h = vh::mid_hook(game_update_ptr,
     [](vh::MidContext* ctx) noexcept {
         player_health = static_cast<int>(ctx->rax);
     },
     { .offset = 0x1C, .tag = "Game.HealthReadback" });
 ```
 
-### `vh::callsite_hook`
-
-```cpp
-// Address-based — primary API for pattern-scanned or version-table addresses
-template<typename Detour>
-Result<Hook> vh::callsite_hook(uintptr_t         site_addr,
-                               Detour*           detour,
-                               auto*             orig,
-                               vanhooks::CallSiteOptions opts = {});
-
-// Function-pointer overload
-template<typename Fn>
-Result<Hook> vh::callsite_hook(Fn*  site_addr,
-                               Fn*  detour,
-                               Fn** orig = nullptr,
-                               vanhooks::CallSiteOptions opts = {});
-```
-
-Patches the 32-bit relative displacement of a **single** `CALL` (E8) or `JMP` (E9) instruction at `site_addr`, redirecting only that one call site. `*orig` receives the resolved absolute address of the original target.
-
-| | Trampoline | CallSite |
-|---|---|---|
-| What is patched | Target function prologue | Displacement at one `CALL`/`JMP` site |
-| Callers affected | All callers | Only the one patched site |
-| ARM64 | ✓ | Returns `Error::Unsupported` |
-
-```cpp
-using PFN = int(__cdecl*)(int);
-PFN g_orig = nullptr;
-
-int my_detour(int x) { return g_orig(x); }
-
-auto addr = vanhooks::scanner::scan_process("E8 ? ? ? ? 83 C4 04").value()[0];
-auto h = vh::callsite_hook(addr, &my_detour, &g_orig, { .tag = "Game.SpeedCall" });
-```
-
-Options: [`vanhooks::CallSiteOptions`](#vanhookscallsiteoptions).
-
-### `vh::hwbp_hook`
-
-```cpp
-Result<Hook> vh::hwbp_hook(void*                 target,
-                           vanhooks::MidCallback  callback,
-                           vanhooks::HwBpOptions  opts = {});
-
-template<typename Fn>
-Result<Hook> vh::hwbp_hook(Fn*                   target,
-                           vanhooks::MidCallback  callback,
-                           vanhooks::HwBpOptions  opts = {});
-```
-
-Hardware breakpoint hook using DR0–DR3 + VEH. No bytes written to the target. Windows x64 only; returns `Error::Unsupported` on other platforms. Maximum 4 active HwBp hooks simultaneously.
-
-```cpp
-auto h = vh::hwbp_hook(&target_fn,
-    [](vanhooks::MidContext* ctx) noexcept { ctx->rax = 0; },
-    { .tag = "silent" });
-```
-
-### `vh::page_guard_hook`
-
-```cpp
-Result<Hook> vh::page_guard_hook(void*                         target,
-                                  vanhooks::MidCallback         callback,
-                                  vanhooks::PageGuardOptions    opts = {});
-```
-
-Sets `PAGE_GUARD` on the target's memory page and intercepts `EXCEPTION_GUARD_PAGE` in a VEH. No inline patch is written. Windows only; returns `Error::Unsupported` on POSIX.
-
-```cpp
-auto h = vh::page_guard_hook(&target_fn, &my_callback,
-    { .condition = vanhooks::PageGuardCondition::Write, .auto_rearm = true });
-```
-
-### `vh::ic_hook` — Instrumentation Callback
-
-```cpp
-Result<Hook> vh::ic_hook(vanhooks::ICCallback  callback,
-                          vanhooks::ICOptions   opts = {});
-```
-
-Sets `KPROCESS.InstrumentationCallback` via `NtSetInformationProcess(0x28)`, firing on every kernel-to-user-mode transition. Process-wide singleton — a second install returns `Error::HookAlreadyExists`. Windows x64 only. The `callback` must be a valid naked/executable stub.
-
-### Return hooks — Engine API (x64 only)
-
-`hook_mid_return()` captures the return value of a function before the caller sees it. Returns `Error::Unsupported` on ARM64 and x86.
-
-```cpp
-auto& eng = vanhooks::global_engine();
-
-auto h = eng.hook_mid_return(
-    &target_fn,
-    /*byte_offset=*/0,
-    /*enter_cb=*/nullptr,
-    [](vanhooks::ReturnContext* ctx) noexcept {
-        ctx->retval_rax = 1;
-    });
-```
-
-**`ReturnContext` fields (x64):** `retval_rax`, `retval_rdx`, `retval_xmm0` (double), `hook_id`, `real_ret_addr`.
-
 ---
 
-## Hook Object
+## Part V — Hook Object Methods
 
-Every creation function returns `Result<Hook>`. Move-only. The destructor calls `remove()` automatically.
+Every creation function returns `Result<Hook>`. Dereference the result to get the `Hook`. The `Hook` is move-only — it cannot be copied.
+
+The `Hook` calls `remove()` in its destructor. You do not need to clean up manually unless you want to remove the hook before the `Hook` object goes out of scope.
 
 ### Lifecycle
 
-| Method | Return | Description |
+| Method | Signature | Description |
 |---|---|---|
-| `enable()` | `Result<std::reference_wrapper<Hook>>` | Activates the hook. Returns an error if the handle is invalid or the OS call fails. |
-| `disable()` | `Result<std::reference_wrapper<Hook>>` | Deactivates without removing. Returns an error on failure. |
-| `remove()` | `void` | Permanently uninstalls. `valid()` returns `false` afterward. Idempotent. |
-
-> **Note:** `enable()` and `disable()` now return `Result<>` instead of a plain `Hook&`. Check the result when you need to detect failure.
-
-```cpp
-if (auto r = h.enable(); !r)
-    printf("enable failed: %s\n", vh::error_to_string(r.error()).data());
-```
+| `enable` | `Hook& enable()` | Activates the hook so calls to the target go to the detour. Returns `*this` for chaining. No-op if already enabled. |
+| `disable` | `Hook& disable()` | Deactivates the hook. The target behaves as if unhooked. Hook remains valid and can be re-enabled. Returns `*this`. |
+| `remove` | `void remove()` | Permanently removes the hook and releases all resources. After `remove()`, `valid()` returns `false`. The destructor calls this automatically. |
 
 ### Chaining
 
 ```cpp
-template<typename Fn>
-Result<Hook> chain(Fn* next_detour,
-                   Fn** next_original_out = nullptr,
-                   std::string tag = {});
+Result<Hook> hook.chain(void* next_detour,
+                        void** next_original_out = nullptr,
+                        std::string tag = {})
 
-Result<Hook> chain(void* next_detour,
-                   void** next_original_out = nullptr,
-                   std::string tag = {});
+Result<Hook> hook.chain(Fn* next_detour,
+                        Fn** next_original_out = nullptr,
+                        std::string tag = {})
 ```
 
-Inserts a detour in front of an existing hook. Remove links before base hooks — `ChainOrderViolation` otherwise.
+Adds a second detour onto an already-hooked target. The new detour is inserted in front of the existing one. Execution order after chaining:
+
+```
+next_detour → original_detour → real_function
+```
+
+The chain link is itself a `Hook` object and **must be removed before the base hook**. Removing the base first returns `Error::ChainOrderViolation`.
+
+```cpp
+auto base = vh::inline_hook(&fn, &detour1, &orig1).value();
+
+static decltype(&fn) next_orig = nullptr;
+auto link = base.chain(&detour2, &next_orig).value();
+
+// Later, in reverse order:
+link.remove();
+base.remove();
+```
 
 ### Introspection
 
 | Method | Return Type | Description |
 |---|---|---|
-| `valid()` | `bool` | Hook is installed and usable. |
-| `enabled()` | `bool` | Hook is currently active. |
-| `tag()` | `std::string` | Label set at creation, or empty. |
+| `valid()` | `bool` | Is this hook installed and usable? |
+| `enabled()` | `bool` | Is the hook currently active? |
+| `tag()` | `std::string` | The tag string set at creation, or empty. |
 | `kind()` | `HookKind` | Which hook type this is. |
-| `target()` | `void*` | Address of the original function (or call site for CallSite hooks). |
-| `detour()` | `void*` | Address of the replacement function. |
-| `trampoline()` | `void*` | Call-through trampoline. `nullptr` for IAT/PLT/VTable/CallSite. |
-| `handle()` | `HookHandle` | Raw handle for Engine interop. |
-| `engine()` | `Engine&` | Reference to the owning engine. |
+| `target()` | `void*` | Address of the original function. |
+| `detour()` | `void*` | Address of your replacement function. |
+| `trampoline()` | `void*` | Address of the call-through trampoline. `nullptr` for IAT, PLT, and VTable hooks. |
+| `operator bool()` | `bool` | Equivalent to `valid()`. |
+
+**`HookKind` values:**
+
+| Value | Installed by |
+|---|---|
+| `HookKind::Trampoline` | `inline_hook`, `api_hook` |
+| `HookKind::IAT` | `iat_hook`, `iat_hook_all` |
+| `HookKind::PLT` | `plt_hook` |
+| `HookKind::VTable` | `vtable_hook` |
+| `HookKind::Mid` | `mid_hook` |
 
 ---
 
-## Group
+## Part VI — Group
 
-Owns a collection of `Hook` objects. All batch lifecycle operations happen in a single thread-suspension window.
+A `Group` owns a collection of `Hook` objects and manages their lifecycle together. All enable/disable operations on a `Group` happen inside a single thread-suspension window, making batch operations significantly cheaper than calling `enable()` on each hook individually.
+
+Create a Group with:
 
 ```cpp
-auto grp = vh::group("RenderHooks");
-grp.add(vh::vtable_hook(vtbl, 8,  (void*)&hk_Present))
-   .add(vh::vtable_hook(vtbl, 16, (void*)&hk_Reset));
-
-grp.enable();
-grp.disable();
-grp.remove_all();
+auto grp = vh::group("GroupName");
 ```
 
-### Add hooks
+The name is optional but recommended for logging and registry lookup. The `Group` removes all its hooks when it goes out of scope (RAII).
 
-| Method | Description |
-|---|---|
-| `add(Hook)` | Takes ownership. Returns `*this`. |
-| `add(Result<Hook>)` | Silently skips errors. Returns `*this`. |
-
-### Address-based install
+### Adding Hooks
 
 ```cpp
-template<typename Fn>
-Group& hook_at(uintptr_t target, Fn* detour, Fn** original = nullptr,
-               config::Trampoline opts = {});
+Group& grp.add(Hook hook)
 ```
-
-Installs a trampoline from a raw runtime address. Failed installs are silently dropped and do not invalidate the chain. Use `add(vh::inline_hook(…))` directly when you need failure visibility.
+Moves a `Hook` into the group. Takes ownership. Returns `*this`.
 
 ```cpp
-grp.hook_at(0x5D5DB0u, &MyDetour);
-grp.hook_at(0x5E7859u, &MyDetour, &orig_fn);
-grp.hook_at(addr, &MyDetour, nullptr, { .tag = "my_hook" });
+Group& grp.add(Result<Hook> result)
 ```
-
-### Hardware breakpoint install
-
-```cpp
-Group& hook_hwbp(uintptr_t              target,
-                 vanhooks::MidCallback   callback,
-                 vanhooks::HwBpOptions   opts = {});
-
-template<typename Fn>
-Group& hook_hwbp(Fn*                    target,
-                 vanhooks::MidCallback   callback,
-                 vanhooks::HwBpOptions   opts = {});
-```
-
-Windows x64 only; silently a no-op on other platforms.
+Adds a `Hook` from a `Result`. If the `Result` holds an error, the add is silently skipped. Returns `*this`. Use this to add hooks inline without checking each one individually:
 
 ```cpp
-grp.hook_hwbp(0xDEADBEEFu, &MyMidCallback);
-grp.hook_hwbp(fn_ptr, &MyMidCallback, { .dr_slot = 1 });
-```
-
-### CallSite install
-
-```cpp
-template<typename Detour>
-Group& hook_callsite(uintptr_t site_addr, Detour* detour, auto* orig,
-                     vanhooks::CallSiteOptions opts = {});
-
-// First match
-template<typename Detour>
-Group& hook_callsite_pattern(std::string_view pattern, ptrdiff_t byte_offset,
-                              Detour* detour, auto* orig,
-                              vanhooks::CallSiteOptions opts = {});
-
-// Nth match (zero-indexed)
-template<typename Detour>
-Group& hook_callsite_pattern(std::string_view pattern, ptrdiff_t byte_offset,
-                              size_t match_index,
-                              Detour* detour, auto* orig,
-                              vanhooks::CallSiteOptions opts = {});
-```
-
-`hook_callsite_pattern` is a no-op (not an error) when the pattern is not found or `match_index` exceeds the number of matches. Failed installs are silently dropped.
-
-```cpp
-grp.hook_callsite(0x12AB34u, &MyDetour, &g_orig);
-grp.hook_callsite(0x12AB34u, &MyDetour, &g_orig, { .tag = "NFS.SpeedCall" });
-
-// Pattern scan — first match, byte 0 is the E8/E9 site
-grp.hook_callsite_pattern("E8 ? ? ? ? 83 C4 04", 0, &MyDetour, &g_orig);
-
-// Advance past a preceding instruction to land on E8
-grp.hook_callsite_pattern("89 04 24 E8 ? ? ? ?", 3, &MyDetour, &g_orig);
-
-// Hook the third match (zero-indexed)
-grp.hook_callsite_pattern("E8 ? ? ? ? 85 C0", 0, 2, &MyDetour, &g_orig);
-```
-
-### Pattern-scan hook
-
-```cpp
-// First match
-template<typename Fn>
-Group& hook_pattern(std::string_view pattern, ptrdiff_t offset,
-                    Fn* detour, Fn** original = nullptr,
-                    config::Trampoline opts = {});
-
-// Nth match (zero-indexed)
-template<typename Fn>
-Group& hook_pattern(std::string_view pattern, ptrdiff_t offset,
-                    size_t match_index,
-                    Fn* detour, Fn** original = nullptr,
-                    config::Trampoline opts = {});
-```
-
-Scans the process for the pattern, offsets to the hook site, and installs a trampoline. No-op if the pattern is not found or `match_index` exceeds the number of matches.
-
-```cpp
-grp.hook_pattern("E8 ? ? ? ? 83 C4 04", -5, &MyDetour);
-grp.hook_pattern("48 8B 05 ? ? ? ?",     0,  &MyDetour, &orig_fn);
-// Hook the second match (index 1):
-grp.hook_pattern("55 8B EC",              0, 1, &MyDetour);
-```
-
-### Memory patch helpers
-
-```cpp
-template<typename T>
-Group& patch(uintptr_t addr, const T& value);
-
-Group& nop(uintptr_t addr, size_t count);
-```
-
-`patch()` writes a typed value with automatic page-protection lifting. `nop()` fills the range with Intel-recommended multi-byte NOPs.
-
-```cpp
-grp.patch<uint8_t>(0x581E72, 32);
-grp.patch<float>(0x5D88D1 + 6, 0.25f);
-grp.nop(0x14E738B, 2);
+grp.add(vh::vtable_hook(vtbl, 8, (void*)&hk_Present))
+   .add(vh::vtable_hook(vtbl, 16, (void*)&hk_Reset))
+   .add(vh::iat_hook("CreateDevice", (void*)&hk_CreateDevice));
 ```
 
 ### Lifecycle
 
-| Method | Description |
-|---|---|
-| `enable()` | Enables all hooks in one thread-suspension window. Returns `*this`. |
-| `disable()` | Disables all hooks. Returns `*this`. |
-| `remove_all()` / `clear()` | Removes and destroys all hooks. |
-| `queue_enable()` | Queue enable without flushing. Returns `*this`. |
-| `queue_disable()` | Queue disable without flushing. Returns `*this`. |
-| `apply()` | Flush all queued operations in one window. Returns `Status`. |
+| Method | Signature | Description |
+|---|---|---|
+| `enable` | `Group& enable()` | Enables all hooks. One thread-suspension window for all. Returns `*this`. |
+| `disable` | `Group& disable()` | Disables all hooks. One thread-suspension window. Returns `*this`. |
+| `remove_all` | `void remove_all()` | Removes and destroys all hooks. One thread-suspension window. Group is empty afterward but still usable. |
+| `clear` | `void clear()` | Alias for `remove_all()`. |
 
-### Introspection
+### Queued Batch Operations
 
-| Method | Description |
-|---|---|
-| `at(string_view tag)` | Find by tag. Returns `Result<std::reference_wrapper<Hook>>`. Returns `Error::HookNotFound` if not found. |
-| `operator[](size_t)` | Index access. Throws `std::out_of_range`. |
-| `size()` | Number of hooks. |
-| `empty()` | True if no hooks. |
-| `name()` | Group name. |
+For very large hook sets, queue operations across multiple steps then flush once.
 
-> **Note:** `at()` now returns `Result<>` instead of throwing. Check the result or use `.value()` if you want an exception on miss.
+| Method | Signature | Description |
+|---|---|---|
+| `queue_enable` | `Group& queue_enable()` | Queues enable for all hooks without flushing. Returns `*this`. |
+| `queue_disable` | `Group& queue_disable()` | Queues disable for all hooks without flushing. Returns `*this`. |
+| `apply` | `Status apply()` | Flushes all queued operations in one thread-suspension window. |
 
 ```cpp
-if (auto r = grp.at("shadow_hook"); r)
-    r->get().disable();
+// Enable 200 hooks in one suspension window
+auto grp = vh::group("AllHooks");
+for (auto& def : hook_defs)
+    grp.add(vh::inline_hook(def.target, def.detour, def.orig));
+
+grp.queue_enable().apply();
 ```
 
-Range-based for is supported:
+### Lookup and Iteration
+
+| Method | Return Type | Description |
+|---|---|---|
+| `size()` | `size_t` | Number of hooks currently in the group. |
+| `empty()` | `bool` | True if the group contains no hooks. |
+| `name()` | `std::string` | The name passed to `vh::group()`. |
+| `operator[](size_t i)` | `Hook&` | Access hook by index. Throws `std::out_of_range` if `i >= size()`. |
+| `at(string_view tag)` | `Hook&` | Find a hook by its tag string. Throws `std::out_of_range` if not found. |
+
+Range-based for loop is supported:
 
 ```cpp
 for (auto& h : grp) {
@@ -591,38 +594,52 @@ for (auto& h : grp) {
 
 ---
 
-## HookRegistry
+## Part VII — HookRegistry
 
-Process-wide singleton. Access via `vh::HookRegistry::global()`.
+`HookRegistry` is a process-wide singleton that owns named `Group`s. Use it when multiple modules (DLLs) in the same process need to register hooks independently and a single shutdown call should clean all of them up.
+
+**When to use `HookRegistry` vs `Group` alone:**  
+If your project is a single DLL or executable with one logical hook owner, a `Group` is sufficient. Use `HookRegistry` when two or more independently-compiled modules each install hooks and need coordinated cleanup at process or plugin shutdown.
+
+**Access:** `vh::HookRegistry::global()`
+
+### Methods
+
+| Method | Signature | Description |
+|---|---|---|
+| `register_group` | `void register_group(Group group)` | Takes ownership of a `Group`. The group is looked up by its name. |
+| `find_group` | `Group* find_group(string_view name)` | Returns a pointer to the named group, or `nullptr` if not found. |
+| `enable_all` | `void enable_all()` | Enable all hooks in all registered groups. |
+| `disable_all` | `void disable_all()` | Disable all hooks in all registered groups. |
+| `remove_all` | `void remove_all()` | Remove all hooks and clear all groups. |
+| `total_hook_count` | `size_t total_hook_count()` | Total number of hooks across all registered groups. |
 
 ```cpp
-// Register
+// Module A (render):
 auto render = vh::group("Render");
 render.add(vh::vtable_hook(vtbl, 8, (void*)&hk_Present));
 vh::HookRegistry::global().register_group(std::move(render));
 
-// Look up from another module
-if (auto* g = vh::HookRegistry::global().find_group("Render"))
-    g->disable();
+// Module B (network):
+auto net = vh::group("Network");
+net.add(vh::api_hook("ws2_32", "send", &hk_send));
+vh::HookRegistry::global().register_group(std::move(net));
 
-// Shutdown
+// Shutdown — one call removes everything from both modules:
 vh::HookRegistry::global().remove_all();
 ```
 
-| Method | Description |
-|---|---|
-| `register_group(Group)` | Takes ownership. Keyed by group name. |
-| `find_group(name)` | Returns `Group*` or `nullptr`. Thread-safe. |
-| `enable_all()` / `disable_all()` / `remove_all()` | Operate across all groups. |
-| `total_hook_count()` | Sum of all hooks across all groups. |
+---
+
+## Part VIII — Configuration Structs
+
+All config structs live in the `vh::config::` namespace and are defined in `<vh/config.vh>`, which is included automatically by `<vh/vh.vh>`.
 
 ---
 
-## Config Structs
+### `vh::config::Trampoline`
 
-All in `vh::config::`, defined in `<vh/config.hpp>` (included by `<vh/vh.hpp>`).
-
-### `config::Trampoline`
+Used by: `inline_hook`, `api_hook`
 
 ```cpp
 struct Trampoline {
@@ -631,28 +648,36 @@ struct Trampoline {
 };
 ```
 
-### `config::API`
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `thread_safe` | `bool` | `true` | When `true`, all threads in the process are suspended during hook installation and removal so no thread can be executing inside the bytes being patched. This is safe and correct in almost every situation. Set to `false` only if you are installing the hook from within a callback that is already executing inside the target function (rare). |
+| `tag` | `std::string` | `""` | A label stored with the hook. Used for debugging, logging, and `Group::at()` lookup. No constraints on content. Recommended convention: `"Module.Function"` or `"Category.Name"`. |
 
-```cpp
-struct API {
-    std::string_view module_name;
-    std::string_view function_name;
-    bool             thread_safe = true;
-    std::string      tag;
-};
-```
+---
 
-### `config::IAT`
+### `vh::config::IAT`
+
+Used by: `iat_hook`, `iat_hook_all`
 
 ```cpp
 struct IAT {
-    std::string_view module_name;    // module containing the IAT (empty = all loaded)
+    std::string_view module_name;
     std::string_view import_name;
     std::string      tag;
 };
 ```
 
-### `config::PLT`
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `module_name` | `string_view` | `""` | The module whose import table to patch. If empty, VanHooks searches all loaded modules and patches the first match. On Windows: `"my_app.exe"` or `"some_plugin.dll"`. |
+| `import_name` | `string_view` | `""` | Unused when calling `iat_hook()` — the import name is passed as the first argument to the function instead. Present in the struct for completeness. |
+| `tag` | `std::string` | `""` | Label for this hook. |
+
+---
+
+### `vh::config::PLT`
+
+Used by: `plt_hook`
 
 ```cpp
 struct PLT {
@@ -662,7 +687,17 @@ struct PLT {
 };
 ```
 
-### `config::VTable`
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `library_name` | `string_view` | `""` | Unused when calling `plt_hook()` — passed as the first argument instead. |
+| `symbol_name` | `string_view` | `""` | Unused when calling `plt_hook()` — passed as the second argument instead. |
+| `tag` | `std::string` | `""` | Label for this hook. |
+
+---
+
+### `vh::config::VTable`
+
+Used by: `vtable_hook`
 
 ```cpp
 struct VTable {
@@ -672,7 +707,21 @@ struct VTable {
 };
 ```
 
-### `config::Mid`
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `vtable` | `void**` | `nullptr` | Unused when calling `vtable_hook()` — passed as the first argument instead. |
+| `slot` | `size_t` | `0` | Unused when calling `vtable_hook()` — passed as the second argument instead. |
+| `tag` | `std::string` | `""` | Label for this hook. In practice, `tag` is the only field set via the opts parameter. |
+
+```cpp
+vh::vtable_hook(vtbl, 8, detour, orig, { .tag = "DXGI.Present" });
+```
+
+---
+
+### `vh::config::Mid`
+
+Used by: `mid_hook`
 
 ```cpp
 struct Mid {
@@ -682,43 +731,171 @@ struct Mid {
 };
 ```
 
-### `config::HwBp`
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `offset` | `size_t` | `0` | Byte offset from the start of the target function where the hook is installed. The actual patch site is rounded up to the nearest complete instruction boundary. Default `0` hooks the function entry. |
+| `thread_safe` | `bool` | `true` | Same meaning as `config::Trampoline::thread_safe`. |
+| `tag` | `std::string` | `""` | Label for this hook. |
+
+---
+
+## Part IX — Error Codes
+
+All error codes are values of the `vh::Error` enum (`uint32_t` underlying type). Use `vh::error_to_string(e)` to get the name as a `string_view`.
+
+### General
+
+| Code | Value | Meaning |
+|---|---|---|
+| `Ok` | 0 | Not an error. Returned on success by void operations. |
+| `NotInitialized` | 1 | The engine has not been initialised yet. |
+| `AlreadyInitialized` | 2 | Initialisation attempted twice. |
+| `InvalidArgument` | 3 | A null pointer or nonsensical value was passed. |
+| `Unsupported` | 4 | The operation is not supported on this platform or architecture (e.g. IAT hooks on Linux). |
+| `OutOfRange` | 5 | An index or offset was outside valid bounds. |
+| `OsError` | 6 | An OS call failed. Check `GetLastError()` (Windows) or `errno` (POSIX). |
+
+### Memory
+
+| Code | Value | Meaning |
+|---|---|---|
+| `MemoryAllocationFailed` | 100 | Could not allocate memory for the trampoline or hook infrastructure. May indicate the process is out of memory or that no suitable region was found near the target for a near-jump trampoline. |
+| `MemoryProtectFailed` | 101 | Could not change memory protection on the target function's page (e.g. `VirtualProtect` failed). |
+| `MemoryReadFailed` | 102 | Could not read from the target address. |
+| `MemoryWriteFailed` | 103 | Could not write the patch bytes to the target. |
+| `TrampolineNoSpace` | 104 | The target function's prologue was too short to safely steal enough bytes for the hook jump. The function may be too small to hook by inline patching. Consider `iat_hook` or `plt_hook` instead. |
+
+### Hook Lifecycle
+
+| Code | Value | Meaning |
+|---|---|---|
+| `HookNotFound` | 200 | The handle refers to a hook that does not exist or has already been removed. |
+| `HookAlreadyExists` | 201 | Attempted to hook the same target address twice. |
+| `HookInstallFailed` | 202 | The hook could not be installed for an unspecified internal reason. Usually preceded by a more specific memory error. |
+| `HookRemoveFailed` | 203 | The hook could not be removed cleanly. |
+| `HookAlreadyEnabled` | 204 | `enable()` was called on a hook that was already active. |
+| `HookAlreadyDisabled` | 205 | `disable()` was called on a hook that was already inactive. |
+
+### Disassembly
+
+| Code | Value | Meaning |
+|---|---|---|
+| `DisassemblyFailed` | 300 | The disassembler could not decode an instruction at the target address. The bytes may not be valid code for the current architecture. |
+| `InstructionTooShort` | 301 | An instruction was encountered that is shorter than the minimum needed for relocation. |
+| `UnsupportedInstruction` | 302 | The target prologue contains an instruction that cannot be safely relocated into the trampoline (e.g. a relative branch whose destination would be out of range after relocation). On x64 this is rare. On ARM64 it may occur with certain conditional branches very close to the function entry. |
+
+### Module and Symbol
+
+| Code | Value | Meaning |
+|---|---|---|
+| `ModuleNotFound` | 400 | The module named in an `api_hook` or `iat_hook` call could not be found among the loaded modules. |
+| `SymbolNotFound` | 401 | The symbol name could not be resolved within the specified module. |
+| `IATEntryNotFound` | 402 | No IAT entry for the requested import was found in the specified (or any) loaded module. |
+| `PLTEntryNotFound` | 403 | No PLT/GOT entry for the requested symbol was found in the specified shared library. |
+
+### Thread
+
+| Code | Value | Meaning |
+|---|---|---|
+| `ThreadSuspendFailed` | 500 | VanHooks could not suspend one or more threads during hook installation. The hook was not installed. |
+| `ThreadResumeFailed` | 501 | After patching, VanHooks could not resume a suspended thread. The hook is installed but the process may be in a degraded state. |
+| `ThreadInPrologue` | 502 | A suspended thread's instruction pointer was found inside the bytes being patched. VanHooks advances it past the patch automatically. This code appearing in logs is informational, not fatal. |
+
+### Batch and Chain
+
+| Code | Value | Meaning |
+|---|---|---|
+| `QueueEmpty` | 600 | `Group::apply` was called with nothing in the queue. Treat as a warning if unexpected. |
+| `ChainBaseNotFound` | 601 | The base hook passed to `hook.chain()` is not known to the engine, likely because it was already removed. |
+| `ChainOrderViolation` | 602 | A chain link was removed before its base hook. Always remove chain links in reverse order of creation. |
+
+---
+
+## Part X — Quick Reference Card
+
+### Include
 
 ```cpp
-struct HwBp {
-    uint8_t     dr_slot = 0xFF;  // 0–3, or 0xFF to auto-pick the first free slot
-    std::string tag;
+#include <vh/vh.vh>
+```
+
+### Level 1 — One line
+
+```cpp
+auto h = vh::hook(&fn, &det);                          // no original
+auto h = vh::hook(&fn, &det, &orig);                   // with original
+auto h = vh::hook("user32", "MessageBoxW", &det, &o);  // by name
+```
+
+### Level 2 — Explicit type
+
+```cpp
+vh::inline_hook (&fn,   &det, &orig, { .tag = "x" })        // trampoline
+vh::api_hook    ("mod", "sym", &det, &orig, { .tag = "x" })  // by name
+vh::vtable_hook (vtbl,  slot,  det,  orig,  { .tag = "x" })  // virtual
+vh::iat_hook    ("Sym", det, { .module_name = "m.exe" })      // Windows IAT
+vh::iat_hook_all("Sym", det, {})                              // all modules
+vh::plt_hook    ("lib", "sym", det, { .tag = "x" })           // Linux / macOS
+vh::mid_hook    (ptr,   cb,   { .offset = 0x1C })             // mid-function
+```
+
+### Hook methods
+
+```cpp
+h.enable()    h.disable()    h.remove()
+h.valid()     h.enabled()    h.tag()
+h.kind()      h.target()     h.detour()    h.trampoline()
+h.chain(&det2, &orig2)
+```
+
+### Group
+
+```cpp
+auto g = vh::group("Name");
+g.add(vh::hook(...)).add(vh::vtable_hook(...));
+g.enable();    g.disable();    g.remove_all();
+g.at("tag").disable();
+for (auto& h : g) { ... }
+g.queue_enable().apply();
+```
+
+### HookRegistry
+
+```cpp
+vh::HookRegistry::global().register_group(std::move(g));
+vh::HookRegistry::global().remove_all();
+```
+
+### Error handling
+
+```cpp
+if (!r) printf("%s\n", vh::error_to_string(r.error()).data());
+```
+
+---
+
+---
+
+## Part XI — Process Injection
+
+```cpp
+#include <vh/inject.vh>
+```
+
+VanHooks provides a complete process injection subsystem. All injection paths are hardened with indirect syscalls — no direct Win32 API calls that EDR can hook. The RAII `Injection` object ejects automatically on scope exit, following the same ownership model as `Hook`.
+
+### `vh::InjectMethod`
+
+```cpp
+enum class InjectMethod : uint8_t {
+    LoadLibrary,   // CreateRemoteThread + LoadLibraryA — simple, detected
+    ManualMap,     // Manual PE mapping — no module-list entry
+    ThreadHijack,  // Context-redirect existing thread — no remote thread
+    ApcQueue,      // Queue APC to alertable threads — timing non-deterministic
 };
 ```
 
-### `config::PageGuard`
-
-```cpp
-struct PageGuard {
-    vanhooks::PageGuardCondition condition  = vanhooks::PageGuardCondition::Execute;
-    bool                         auto_rearm = true;
-    std::string                  tag;
-};
-```
-
-### `config::IC`
-
-```cpp
-struct IC {
-    std::string tag;
-};
-```
-
-### `vanhooks::CallSiteOptions`
-
-```cpp
-struct CallSiteOptions {
-    bool        thread_safe = true;
-    std::string tag;
-};
-```
-
-### `config::Inject`
+### `vh::config::Inject`
 
 ```cpp
 struct Inject {
@@ -727,868 +904,297 @@ struct Inject {
 };
 ```
 
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `method` | `InjectMethod` | `LoadLibrary` | Which injection technique to use. |
+| `tag` | `std::string` | `""` | Label for identification and logging. |
+
 ---
 
-## Engine Access
-
-The global `Engine` is accessible through `vanhooks::global_engine()` and the `vh::advanced::engine()` alias. It manages trampoline pools, thread suspension, and the hook registry internally.
+### `vh::inject`
 
 ```cpp
-auto& eng = vanhooks::global_engine();   // or vh::advanced::engine()
-
-// Queue multiple operations and apply in one thread-suspension window
-eng.queue_enable(h1.handle());
-eng.queue_disable(h2.handle());
-eng.apply_queued();
-
-// Return hook (x64 only)
-eng.hook_mid_return(&target, 0, nullptr, [](vanhooks::ReturnContext* ctx) noexcept {
-    ctx->retval_rax = 0;
-});
-
-// Chain a second detour onto an existing hook
-eng.chain(h1.handle(), (void*)&second_detour, (void**)&orig_for_second);
+Result<Injection> vh::inject(uint32_t pid,
+                              std::string_view dll_path,
+                              config::Inject opts = {});
 ```
 
-Full `Engine::Config` control — custom allocators, independent engine instances, watchdog interval — is available via a [source license](https://www.teamvanilla.org/).
+Inject a DLL by file path into process `pid`. The DLL path must be fully qualified and accessible from the target process.
 
----
-
-## Shutdown
-
-```cpp
-vh::shutdown();
-```
-
-Removes all hooks installed through the global engine. Call this before returning from `DllMain(DLL_PROCESS_DETACH)` or before unloading the library to guarantee hooks are removed while your module's objects are still live. Idempotent — safe to call multiple times.
-
-Equivalent to `vanhooks::global_engine().remove_all()`.
-
----
-
-## Error Codes
-
-All codes are `vh::Error` values. Use `vh::error_to_string(e)` for the name.
-
-### General
-
-| Code | Meaning |
+| Parameter | Description |
 |---|---|
-| `Ok` | Success. |
-| `NotInitialized` | Engine not initialised. |
-| `AlreadyInitialized` | Initialisation attempted twice. |
-| `InvalidArgument` | Null pointer or out-of-range value. |
-| `Unsupported` | Operation not supported on this platform or architecture. |
-| `OutOfRange` | Index or offset outside valid bounds. |
-| `OsError` | OS call failed. |
-| `InvalidAddress` | Byte at the given address is not the expected opcode. |
+| `pid` | Target process ID. |
+| `dll_path` | Fully-qualified DLL path. |
+| `opts` | Method and optional tag. |
 
-### Memory
+**Returns:** `Result<Injection>`. On success, the `Injection` RAII handle is valid and the DLL is loaded in the target process. On failure, check `.error()`.
 
-| Code | Meaning |
+```cpp
+auto inj = vh::inject(pid, "C:\\payloads\\research.dll",
+    { .method = vh::InjectMethod::ManualMap, .tag = "research" });
+```
+
+---
+
+### `vh::inject_from_memory`
+
+```cpp
+Result<Injection> vh::inject_from_memory(uint32_t pid,
+                                          std::span<const uint8_t> pe_bytes,
+                                          config::Inject opts = {});
+```
+
+Inject from an in-memory PE image. If `opts.method` is `ManualMap`, the image is mapped directly into the target without touching disk. For other methods, the image is written to a temp file, loaded via the chosen method, and the file is deleted immediately after.
+
+| Parameter | Description |
 |---|---|
-| `MemoryAllocationFailed` | Could not allocate trampoline memory. |
-| `MemoryProtectFailed` | Could not change memory protection. |
-| `MemoryReadFailed` | Could not read from target address. |
-| `MemoryWriteFailed` | Could not write patch bytes. |
-| `TrampolineNoSpace` | Prologue too short, or detour outside ±2 GB of call site. |
+| `pid` | Target process ID. |
+| `pe_bytes` | Raw PE bytes. Must be a valid x64 DLL for ManualMap. |
+| `opts` | Method and optional tag. |
 
-### Hook lifecycle
+```cpp
+std::vector<uint8_t> pe = load_from_resource();
+auto inj = vh::inject_from_memory(pid, pe,
+    { .method = vh::InjectMethod::ManualMap, .tag = "stealth" });
+```
 
-| Code | Meaning |
+---
+
+### `vh::eject`
+
+```cpp
+Result<void> vh::eject(Injection& inj);
+```
+
+Explicitly eject an injection. Equivalent to `inj.eject()`. Provided for API symmetry.
+
+---
+
+### `Injection` Object Methods
+
+The `Injection` class is move-only and ejects automatically on destruction (RAII).
+
+| Method | Return Type | Description |
+|---|---|---|
+| `eject()` | `Result<void>` | Explicitly eject and invalidate. Idempotent. |
+| `valid()` | `bool` | Is this injection handle still active? |
+| `pid()` | `uint32_t` | Target process ID. |
+| `method()` | `InjectMethod` | Which injection technique was used. |
+| `tag()` | `std::string` | The tag string set at creation. |
+| `operator bool()` | `bool` | Equivalent to `valid()`. |
+| `handle()` | `InjHandle` | Escape hatch — internal handle for power users. |
+
+---
+
+### Extended Catalogue (24 techniques)
+
+```cpp
+#include <vh/inject_unified.vh>
+```
+
+The unified API provides `vh::InjectMethodEx` (24 values) and `vh::inject_by_method(request)` — a single-call dispatcher to any technique. The first 4 values numerically match `vh::InjectMethod`.
+
+**Technique groups:**
+
+| Group | Techniques |
 |---|---|
-| `HookNotFound` | Handle refers to a removed or unknown hook. |
-| `HookAlreadyExists` | Target already hooked (also: second `ic_hook` install). |
-| `HookInstallFailed` | Install failed (usually a memory error). |
-| `HookRemoveFailed` | Remove failed. |
-| `HookAlreadyEnabled` | `enable()` on an active hook. |
-| `HookAlreadyDisabled` | `disable()` on an inactive hook. |
-
-### Disassembly
-
-| Code | Meaning |
-|---|---|
-| `DisassemblyFailed` | Zydis could not decode the instruction stream. |
-| `InstructionTooShort` | Not enough bytes to form a complete instruction. |
-| `UnsupportedInstruction` | Instruction cannot be relocated. |
-
-### Module / symbol
-
-| Code | Meaning |
-|---|---|
-| `ModuleNotFound` | No matching module found. |
-| `SymbolNotFound` | Symbol name not found in debug info. |
-| `IATEntryNotFound` | No matching IAT entry in the target module. |
-| `PLTEntryNotFound` | No matching PLT/GOT entry. |
-
-### Thread / chain / PE / breakpoint / callstack
-
-| Code | Meaning |
-|---|---|
-| `ThreadSuspendFailed` | Could not suspend one or more threads. |
-| `ThreadResumeFailed` | Could not resume a suspended thread. |
-| `ThreadInPrologue` | Thread IP was inside stolen bytes; IP fixup applied. Informational. |
-| `QueueEmpty` | `apply_queued()` called with nothing queued. |
-| `ChainBaseNotFound` | Base `HookHandle` passed to `chain()` is unknown. |
-| `ChainOrderViolation` | Chain link removed before its base. |
-| `PeInvalidHeader` | DOS/NT signature mismatch or bad offset. |
-| `PeNoExportDirectory` | Module has no export directory. |
-| `PeNoImportDirectory` | Module has no import directory. |
-| `PeItemNotFound` | Named export/import/section not found. |
-| `BreakpointAlreadySet` | A breakpoint is already installed at this address. |
-| `BreakpointNotFound` | No breakpoint at the given address. |
-| `BreakpointSlotExhausted` | All DR0–DR3 slots occupied. |
-| `BreakpointInstallFailed` | OS call to set/clear context failed. |
-| `CallstackCaptureFailed` | `RtlCaptureStackBackTrace` / `backtrace()` returned 0. |
+| **Core (4)** | LoadLibrary, ManualMap, ThreadHijack, ApcQueue |
+| **Process-birth (4)** | EarlyBird APC, Herpaderping, Ghosting, Doppelgänging |
+| **Remote-thread (4)** | NtCreateThreadEx, RtlCreateUserThread, Reflective, SetWindowsHookEx |
+| **APC-modern (2)** | QueueApcEx2, Waiting-thread hijack |
+| **Callback-hijack (3)** | KernelCallbackTable, Threadless callback, Module-stomp |
+| **Window-message (2)** | PROP_PROPAGATE, Extra Window Memory |
+| **Process-manip (3)** | Process Hollowing, PoolParty, NtMapViewOfSection |
 
 ---
 
-## Pattern Scanner
-
-All in `vanhooks::scanner::`.
-
-### `scan_process` — process-wide (Windows)
+## Part XII — Stealth Helpers (`vh::inject_stealth`)
 
 ```cpp
-Result<std::vector<uintptr_t>> vanhooks::scanner::scan_process(std::string_view ida_pattern);
+#include <vh/inject_stealth.vh>
 ```
 
-### `scan_module` — named module (Windows)
+**Windows only.** These are the indirect-syscall helpers used internally by all injection techniques. They are exposed publicly so that users building custom injection flows or extending VanHooks can route their own process-manipulation calls through the same stealth layer.
 
-```cpp
-Result<std::vector<uintptr_t>> vanhooks::scanner::scan_module(
-    std::string_view module_name,
-    std::string_view ida_pattern);
-```
+All functions route through `vh::syscalls::stub_for()` in indirect mode — the `syscall` instruction executes at an ntdll gadget address, so kernel stack walks see a legitimate ntdll return address. Stubs are resolved once per process lifetime and cached.
 
-### `scan_pattern` — explicit range
-
-```cpp
-Result<std::vector<uintptr_t>> vanhooks::scanner::scan_pattern(
-    const void*      base,
-    size_t           size,
-    std::string_view ida_pattern);
-```
-
-`?` or `??` matches any byte.
-
-### `scan_bytes` — exact bytes
-
-```cpp
-std::vector<uintptr_t> vanhooks::scanner::scan_bytes(
-    const void*              base,
-    size_t                   size,
-    std::span<const uint8_t> needle);
-```
-
-### `parse_pattern` — pre-compile for reuse
-
-```cpp
-Result<Pattern> vanhooks::scanner::parse_pattern(std::string_view input);
-```
+**Namespace:** `vh::inject_stealth`
 
 ---
 
-## Anti-Debug Detection
-
-All in `vanhooks::antidebug::`.
-
-### `check_all`
+### `vh_open_process`
 
 ```cpp
-vanhooks::antidebug::Report vanhooks::antidebug::check_all();
+HANDLE vh_open_process(DWORD pid,
+                       ACCESS_MASK access = PROCESS_ALL_ACCESS) noexcept;
 ```
 
-```cpp
-auto report = vanhooks::antidebug::check_all();
-if (report.any_detected())
-    printf("%d technique(s) triggered\n", report.detection_count());
-
-for (auto& f : report.findings)
-    printf("[%s] %s — %s\n",
-        f.detected ? "DETECTED" : "clean",
-        f.technique.c_str(), f.detail.c_str());
-```
-
-**Windows (8 techniques):** `IsDebuggerPresent`, `CheckRemoteDebuggerPresent`, `NtQueryInformationProcess(DebugPort)`, `HeapFlags`, `NtGlobalFlag`, `CloseHandle(invalid)`, `TimingCheck`, `DebuggerProcessList`.
-
-**Linux:** `ptrace(PTRACE_TRACEME)`.
-
-Individual checks also available: `check_is_debugger_present()`, `check_remote_debugger()`, `check_debug_port()`, `check_heap_flags()`, `check_nt_global_flag()`, `check_close_handle_exception()`, `check_timing()`, `check_debugger_processes()`.
+Open a process via `NtOpenProcess` (indirect syscall). Drop-in replacement for `OpenProcess()`.
 
 ---
 
-## Disassembler
-
-Zydis-backed. Always available. Types in `vh::disasm::`.
+### `vh_alloc_remote`
 
 ```cpp
-vh::disasm::Disassembler dis;
-
-auto insn    = dis.decode_one(code_span, runtime_va);
-auto insns   = vh::disasm::decode_until_branch(fn_ptr, 128);
-auto prologue = vh::disasm::decode_prologue(fn_ptr, 14);
-auto safe_len = vh::disasm::safe_copy_length(fn_ptr, 5);
-auto rr      = vh::disasm::rewrite(insns, original_va, new_va);
-
-puts(vh::disasm::format_listing(insns).c_str());
+void* vh_alloc_remote(HANDLE proc, void* preferred, SIZE_T size,
+                      DWORD type = MEM_COMMIT | MEM_RESERVE,
+                      DWORD protect = PAGE_READWRITE) noexcept;
 ```
 
-**`Instruction` fields:** `address`, `length`, `kind` (`InsnKind`), `bytes[16]`, `absolute_target`, `mnemonic`.
-
-**`InsnKind` values:** `Generic`, `Call`, `Jump`, `JumpConditional`, `Return`, `Nop`, `RipRelative`, `PcRelative`, `Privileged`.
+Allocate memory in a remote process via `NtAllocateVirtualMemory` (indirect). Drop-in replacement for `VirtualAllocEx()`.
 
 ---
 
-## Process Injection
-
-**Windows only.**
+### `vh_write_remote`
 
 ```cpp
-#include <vh/inject.hpp>
-
-// Inject by path
-auto inj = vh::inject(pid, "C:\\payload.dll",
-                      { .method = vh::InjectMethod::ManualMap });
-
-// Inject from in-memory PE bytes
-auto inj2 = vh::inject_from_memory(pid, pe_bytes,
-                                    { .method = vh::InjectMethod::ThreadHijack });
-
-// Explicit eject (or let it destruct)
-inj->eject();
-vh::eject(*inj2);
+bool vh_write_remote(HANDLE proc, void* remote, const void* local,
+                     SIZE_T size, SIZE_T* written = nullptr) noexcept;
 ```
 
-| Method | Module-list entry | Remote thread | Stealth |
-|---|:---:|:---:|:---:|
-| `LoadLibrary` | ✓ | ✓ | Low |
-| `ManualMap` | ✗ | ✓ (shellcode) | Medium |
-| `ThreadHijack` | Configurable | ✗ | High |
-| `ApcQueue` | Configurable | ✗ | High |
-
-**`Injection` methods:** `eject()` → `Result<void>`, `valid()`, `pid()`, `method()`, `tag()`, `handle()`.
-
-**Extended injection** (17 additional techniques) is available via `#include <vh/inject_ex.vh>` and the unified `vh::inject_by_method()` dispatcher in `#include <vh/inject_unified.vh>`.
+Write to remote process memory via `NtWriteVirtualMemory` (indirect). Drop-in replacement for `WriteProcessMemory()`.
 
 ---
 
-## Stealth Subsystems
-
-All stealth headers are included automatically by `<vh/vh.hpp>`. They are Windows-only unless noted.
-
-### Module Unhooking — `vh::unhook`
+### `vh_read_remote`
 
 ```cpp
-#include <vh/unhook.vh>
-
-auto reports = vh::unhook::restore_defaults();
-auto r       = vh::unhook::restore_module("wininet.dll");
-auto diff    = vh::unhook::diff_module("ntdll.dll");
+bool vh_read_remote(HANDLE proc, const void* remote, void* local,
+                    SIZE_T size, SIZE_T* read_count = nullptr) noexcept;
 ```
 
-Call `restore_defaults()` once, as early as possible, before installing any other hooks.
-
-### Syscall Gate — `vh::syscalls`
-
-```cpp
-#include <vh/syscalls.vh>
-
-auto stub = vh::syscalls::stub_for("NtProtectVirtualMemory");
-auto d    = vh::syscalls::stub_for("NtAllocateVirtualMemory",
-                                    vh::syscalls::StubKind::Direct);
-auto ssn  = vh::syscalls::resolve_ssn("NtWriteVirtualMemory");
-auto ssn2 = vh::syscalls::resolve_ssn_by_hash(0xABCD1234u);
-```
-
-SSN resolution chain (`ResolveMode::Auto`): Hell's Gate → Halo's Gate → Tartarus Gate. Windows x64 only.
-
-### Call Stack Spoofing — `vh::callstack_spoof`
-
-```cpp
-#include <vh/callstack_spoof.vh>
-
-NTSTATUS __stdcall DoSensitive(...) {
-    VH_CALLSTACK_SPOOF();
-    return NtProtectVirtualMemory(...);
-}
-```
-
-`VH_CALLSTACK_SPOOF()` is a no-op on non-Windows and non-x64 targets.
-
-### PEB Masking — `vh::peb_mask`
-
-```cpp
-#include <vh/peb_mask.vh>
-
-vh::peb_mask::apply(vh::peb_mask::All);
-vh::peb_mask::unlink_module("payload.dll");
-vh::peb_mask::restore();
-```
-
-**`Flags`:** `BeingDebugged`, `NtGlobalFlag`, `HeapFlags`, `All`.
-
-### Thread Hiding — `vh::thread_hide`
-
-```cpp
-#include <vh/thread_hide.vh>
-
-vh::thread_hide::hide_current_thread();
-vh::thread_hide::hide_thread(thread_handle);
-vh::thread_hide::install_dr_camouflage();
-bool active = vh::thread_hide::dr_camouflage_active();
-vh::thread_hide::uninstall_dr_camouflage();
-```
-
-### Sleep Obfuscation — `vh::sleep_obf`
-
-```cpp
-#include <vh/sleep_obf.vh>
-
-vh::sleep_obf::sleep_encrypted(3000, mi.lpBaseOfDll, mi.SizeOfImage);
-vh::sleep_obf::sleep_encrypted(3000, std::span<uint8_t>{ptr, size});
-vh::sleep_obf::sleep_encrypted_main_text(3000);
-```
-
-### API Hashing — `vh::api_hash`
-
-```cpp
-#include <vh/api_hash.vh>
-
-constexpr auto H_K32 = vh::api_hash::module_djb2("kernel32.dll");
-constexpr auto H_VP  = vh::api_hash::export_djb2("VirtualProtect");
-
-using PFN_VP = BOOL (WINAPI*)(LPVOID, SIZE_T, DWORD, PDWORD);
-auto VirtualProtect_ = reinterpret_cast<PFN_VP>(vh::api_hash::resolve(H_K32, H_VP));
-```
-
-Two hash functions: `djb2` / `module_djb2` and `fnv1a`. Both are `constexpr`.
-
-### Module Stomping — `vh::module_stomp`
-
-```cpp
-#include <vh/module_stomp.vh>
-
-auto s  = vh::module_stomp::stomp(payload_span);
-auto s2 = vh::module_stomp::stomp_at(address, payload_span);
-auto addr = vh::module_stomp::find_stomp_target(payload.size());
-vh::module_stomp::restore(std::move(*s));
-```
-
-### VEH Hook — `vh::veh_hook`
-
-```cpp
-#include <vh/veh_hook.vh>
-
-auto h = vh::veh_hook::install(&target_fn,
-    [](vanhooks::MidContext* ctx) noexcept { ctx->rax = 0; });
-
-vh::veh_hook::remove(*h);
-vh::veh_hook::remove_all();
-```
-
-Up to 256 concurrent VEH hooks. No DR registers used.
+Read from remote process memory via `NtReadVirtualMemory` (indirect). Drop-in replacement for `ReadProcessMemory()`.
 
 ---
 
-## Telemetry Suppression
+### `vh_free_remote`
 
 ```cpp
-#include <vh/telemetry_patch.vh>
+bool vh_free_remote(HANDLE proc, void* base, SIZE_T size = 0,
+                    DWORD type = MEM_RELEASE) noexcept;
 ```
 
-`vh::telemetry` patches user-mode telemetry emitters in-process to silence ETW and AMSI. All entry points return `Error::Unsupported` on POSIX.
+Free remote memory via `NtFreeVirtualMemory` (indirect). Drop-in replacement for `VirtualFreeEx()`.
 
-> Call `vh::unhook::restore_defaults()` **before** calling any `vh::telemetry::disable_*` function. If you patch first, the unhook pass restores original bytes and undoes your suppression.
->
-> These are user-mode measures only — they have no effect on HVCI / VBS-protected systems.
+---
 
-### `PatchOutcome` / `Report`
+### `vh_protect_remote`
 
 ```cpp
-struct PatchOutcome {
-    std::string    name;           // e.g. "EtwEventWrite"
-    void*          target = nullptr;
-    bool           patched = false; // false if the export was absent
-    std::size_t    bytes_written = 0;
-    vanhooks::Error error = vanhooks::Error::Ok;
+bool vh_protect_remote(HANDLE proc, void* base, SIZE_T size,
+                       DWORD new_prot, DWORD* old_prot) noexcept;
+```
+
+Change remote memory protection via `NtProtectVirtualMemory` (indirect). Drop-in replacement for `VirtualProtectEx()`.
+
+---
+
+### `vh_create_thread`
+
+```cpp
+HANDLE vh_create_thread(HANDLE proc, void* start, void* param = nullptr,
+                        bool suspended = false) noexcept;
+```
+
+Create a remote thread via `NtCreateThreadEx` (indirect). Drop-in replacement for `CreateRemoteThread()`.
+
+---
+
+### `vh_open_thread`
+
+```cpp
+HANDLE vh_open_thread(DWORD tid, ACCESS_MASK access) noexcept;
+```
+
+Open a thread via `NtOpenThread` (indirect). Drop-in replacement for `OpenThread()`.
+
+---
+
+### `vh_close`
+
+```cpp
+void vh_close(HANDLE h) noexcept;
+```
+
+Close a handle via `NtClose` (indirect). Drop-in replacement for `CloseHandle()`. Safe to call with `nullptr` or `INVALID_HANDLE_VALUE`.
+
+---
+
+### `vh_find_thread`
+
+```cpp
+DWORD vh_find_thread(DWORD pid) noexcept;
+```
+
+Find the first thread in a process via `NtQuerySystemInformation` (indirect). Drop-in replacement for `CreateToolhelp32Snapshot` + `Thread32First`. Returns the thread ID, or 0 on failure.
+
+---
+
+### `vh_queue_apc`
+
+```cpp
+bool vh_queue_apc(HANDLE thread, void* apc_routine,
+                  void* arg1 = nullptr, void* arg2 = nullptr,
+                  void* arg3 = nullptr) noexcept;
+```
+
+Queue an APC to a thread via `NtQueueApcThread` (indirect).
+
+---
+
+### `vh_write_shellcode`
+
+```cpp
+struct RemoteAlloc {
+    void*  base = nullptr;
+    SIZE_T size = 0;
 };
 
-using Report = std::vector<PatchOutcome>;
+RemoteAlloc vh_write_shellcode(HANDLE proc,
+                               std::span<const std::uint8_t> code) noexcept;
 ```
 
-### API
+Atomic shellcode deployment: allocates `PAGE_READWRITE`, writes the code, then flips to `PAGE_EXECUTE_READ`. No `PAGE_EXECUTE_READWRITE` memory ever exists. Returns the remote allocation address and size. The caller is responsible for freeing via `vh_free_remote` after the shellcode has executed.
+
+---
+
+### Quick Reference — Injection
 
 ```cpp
-// Suppress ETW (EtwEventWrite, NtTraceEvent, EtwEventWriteFull)
-[[nodiscard]] vh::Result<Report> vh::telemetry::disable_etw()  noexcept;
+#include <vh/inject.vh>
+using namespace vh;
 
-// Suppress AMSI (AmsiScanBuffer, AmsiScanString)
-[[nodiscard]] vh::Result<Report> vh::telemetry::disable_amsi() noexcept;
+// Inject
+auto inj = inject(pid, dll, { .method = InjectMethod::ManualMap });
+auto inj = inject_from_memory(pid, pe, { .method = InjectMethod::ManualMap });
 
-// Suppress both — merged report
-[[nodiscard]] vh::Result<Report> vh::telemetry::disable_all()  noexcept;
+// Eject
+inj.eject();   // or let RAII handle it
 
-// Undo all patches applied by earlier disable_* calls. Idempotent.
-[[nodiscard]] vh::Result<Report> vh::telemetry::restore()      noexcept;
-
-// True if any patch is currently applied
-[[nodiscard]] bool vh::telemetry::any_patched() noexcept;
-
-// Copy of the current internal patch table — useful for logging
-[[nodiscard]] Report vh::telemetry::status()    noexcept;
+// Introspection
+inj.valid()    inj.pid()    inj.method()    inj.tag()
 ```
 
+### Quick Reference — Stealth Helpers
+
 ```cpp
-// Example
-auto r = vh::telemetry::disable_all();
-if (r) {
-    for (auto& o : *r)
-        printf("[%s] %s  bytes=%zu\n",
-               o.patched ? "patched" : "skipped",
-               o.name.c_str(), o.bytes_written);
-}
+#include <vh/inject_stealth.vh>
+using namespace vh::inject_stealth;
+
+HANDLE p = vh_open_process(pid);
+void*  m = vh_alloc_remote(p, nullptr, 4096);
+bool   w = vh_write_remote(p, m, data, sz);
+bool   r = vh_read_remote(p, m, buf, sz);
+bool   f = vh_free_remote(p, m);
+bool   v = vh_protect_remote(p, m, 4096, PAGE_EXECUTE_READ, &old);
+HANDLE t = vh_create_thread(p, start);
+HANDLE o = vh_open_thread(tid, access);
+DWORD  d = vh_find_thread(pid);
+bool   q = vh_queue_apc(thread, routine);
+auto  sc = vh_write_shellcode(p, code_span);
+vh_close(p);
 ```
 
 ---
 
-## Symbol Resolution
-
-**Requires `VH_SYMBOLS_ENABLED`. DbgHelp (Windows) / `dladdr` + libbacktrace (POSIX).**
-
-```cpp
-#include <vh/symbols.hpp>
-
-vh::symbols::initialize();
-auto sym  = vh::symbols::resolve(address);
-auto sym2 = vh::symbols::resolve(&MessageBoxW);
-auto addr = vh::symbols::find("NtQuerySystemInformation", "ntdll.dll");
-auto loc  = vh::symbols::source_location(address);
-vh::symbols::load_module("C:\\Windows\\System32\\ntdll.dll");
-
-for (auto& line : vh::symbols::current_stack())
-    puts(line.c_str());
-
-auto name = vh::symbols::demangle(raw_name);
-```
-
-**`Symbol` fields:** `name`, `raw_name`, `address`, `size`, `module`, `file`, `line`.
-
----
-
-## PE Introspection
-
-**Windows only.**
-
-```cpp
-#include <vh/pe.hpp>
-
-auto pe  = vh::pe::open("ntdll.dll");
-auto pe2 = vh::pe::open_at(base_va);
-auto pe3 = vh::pe::open_handle(hmod);
-
-for (auto& s : pe->sections().value_or({}))
-    printf("%-8s  VA=0x%llx\n", s.name.c_str(), (ull)s.virtual_address);
-
-auto exp  = pe->find_export("NtQuerySystemInformation");
-auto imp  = pe->find_import("kernel32.dll", "VirtualProtect");
-
-for (auto& cave : pe->find_caves(32, true))
-    printf("cave @ 0x%llx  %zu bytes\n", (ull)cave.address, cave.size);
-
-for (auto& m : vh::pe::modules().value_or({}))
-    printf("%s  base=0x%llx\n", m.name().data(), (ull)m.base());
-```
-
----
-
-## Breakpoints
-
-**Requires `VH_BREAKPOINT_ENABLED`.**
-
-```cpp
-#include <vh/breakpoint.hpp>
-
-auto sw = vh::breakpoint::set_software(addr,
-    [](uintptr_t a) { return vh::breakpoint::Action::Continue; });
-
-auto hw = vh::breakpoint::set_hardware(addr,
-    vh::breakpoint::HwCondition::Write,
-    vh::breakpoint::HwSize::Dword,
-    [](uintptr_t a) { return vh::breakpoint::Action::Remove; });
-
-hw->apply_to_new_thread(new_thread_handle);
-```
-
-**`Action`:** `Continue` · `Remove`
-
-**`HwCondition`:** `Execute` · `Write` · `ReadWrite`
-
-**`HwSize`:** `Byte` · `Word` · `Dword` · `Qword` (x64 only)
-
----
-
-## Call Stack Capture
-
-**Requires `VH_CALLSTACK_ENABLED`.**
-
-```cpp
-#include <vh/callstack.hpp>
-
-auto frames = vh::callstack::capture(/*skip=*/2, /*max_depth=*/32);
-for (auto addr : frames.value_or({}))
-    printf("  0x%016llx\n", addr);
-
-auto ann = vh::callstack::capture_annotated();
-if (ann) puts(vh::callstack::format(*ann).c_str());
-```
-
----
-
-## VanTrace
-
-Structured runtime event tracing. Lock-free ring buffer, background consumer, pluggable sinks. **Requires `VH_TRACE_ENABLED`.**
-
-```cpp
-#include <vh/trace.hpp>
-```
-
-### Lifecycle
-
-```cpp
-vh::Tracer tracer(cfg);
-tracer.set_sink(my_sink);
-tracer.set_filter(my_filter);
-tracer.start();
-// ... attach hooks ...
-tracer.stop();
-```
-
-### Sinks
-
-| Type | Description |
-|---|---|
-| `vh::NullSink` | Discards all events. Default. |
-| `vh::CallbackSink` | Calls `std::function<void(const TraceEvent&, const TraceMeta*)>` per event. |
-| Custom `vh::ISink` | Implement `on_events(span<const TraceEvent>, meta_for_fn)` and optionally `flush()`. |
-
-### Attaching hooks
-
-```cpp
-// Cooperative attach (default)
-static vh::AttachedHook g_hook = tracer.attach(h, "d3d9.EndScene").value();
-
-// Transparent attach
-tracer.inner().attach(h.engine(), h.handle(),
-                      "d3d9.EndScene",
-                      vanhooks::trace::AttachMode::Transparent);
-```
-
-### Cooperative usage — `CallScope`
-
-```cpp
-HRESULT __stdcall hk_EndScene(IDirect3DDevice9* dev) {
-    vh::CallScope scope(g_hook);
-    return orig_EndScene(dev);
-}
-```
-
-### `AttachedHook` methods
-
-| Method | Description |
-|---|---|
-| `enter()` | Records `HookEnter`. Returns `TimePoint`. |
-| `exit(TimePoint)` | Records `HookExit` with duration. |
-| `capture_context(data, size)` | Stores up to 64 bytes; attached to next `HookEnter` on this thread. |
-| `valid()` | True if still registered with the tracer. |
-| `meta()` | Returns `const TraceMeta&`. |
-
-### Filters
-
-```cpp
-vh::TraceFilter f;
-f.include_handles  = { h1.handle(), h2.handle() };
-f.include_kinds    = { vanhooks::HookKind::CallSite };
-f.include_threads  = { GetCurrentThreadId() };
-f.min_duration     = std::chrono::microseconds(100);
-f.sample_every_n   = 10;
-tracer.set_filter(f);
-```
-
-### Configuration
-
-```cpp
-vh::TraceConfig cfg;
-cfg.ring_capacity     = 8192;  // must be power of two
-cfg.overflow_policy   = vanhooks::trace::OverflowPolicy::BlockNewer;
-cfg.enable_timing     = true;
-cfg.enable_thread_id  = true;
-cfg.enable_call_depth = true;
-```
-
-### `TraceEvent` fields
-
-| Field | Type | Description |
-|---|---|---|
-| `kind` | `TraceEventKind` | `HookEnter`, `HookExit`, `TraceDropped` |
-| `hook_kind` | `HookKind` | Trampoline / IAT / PLT / VTable / Mid / CallSite / HwBp / PageGuard / IC |
-| `hook_id` | `uint64_t` | Matches `HookHandle::id` |
-| `thread_id` | `uint32_t` | OS thread ID |
-| `timestamp` | `TimePoint` | Monotonic clock point |
-| `duration` | `Duration` | `HookExit` only: ns between enter/exit |
-| `call_depth` | `uint32_t` | Thread-local nesting depth |
-| `has_context` | `bool` | Whether `context` is populated |
-| `context` | `RawContext` | Up to 64 bytes from `capture_context()` |
-| `dropped_count` | `uint64_t` | `TraceDropped` only: events lost |
-
-### Statistics
-
-```cpp
-auto s = tracer.stats();
-printf("produced=%llu  consumed=%llu  dropped=%llu  overflows=%llu\n",
-    s.events_produced, s.events_consumed, s.events_dropped, s.buffer_overflows);
-```
-
----
-
-## Network API
-
-Requires Npcap (Windows) / libpcap (POSIX). Types in `vh::net::`.
-
-```cpp
-for (const auto& d : vh::net::devices())
-    printf("%-20s %s\n", d.name.c_str(), d.ip4.c_str());
-
-auto cap = vh::net::Capture::open("eth0").value();
-cap.filter("tcp port 443").promiscuous(true);
-cap.start([](vh::net::Packet p) {
-    auto parsed = p.parse();
-    if (auto* ip = parsed->getLayerOfType<vanhooks::net::IPv4Layer>())
-        printf("%s → %s\n",
-            ip->getSrcIPAddress().toString().c_str(),
-            ip->getDstIPAddress().toString().c_str());
-});
-
-auto r = vh::net::PcapReader::open("capture.pcapng").value();
-auto w = vh::net::PcapWriter::open("out.pcap").value();
-```
-
----
-
-## Quick Reference
-
-```cpp
-#include <vh/vh.hpp>
-```
-
-**Level 1**
-```cpp
-vh::hook(&fn, &det)
-vh::hook(&fn, &det, &orig)
-vh::hook("module", "Symbol", &det, &orig)
-vh::hook(0x5D5DB0u, &det)
-vh::hook(0x5D5DB0u, &det, &orig)
-```
-
-**Level 2**
-```cpp
-vh::inline_hook(&fn,        &det, &orig, { .tag = "x" })
-vh::inline_hook(0x5D5DB0u, &det, &orig, { .tag = "x" })
-vh::api_hook    ("mod", "sym", &det, &orig)
-vh::vtable_hook (vtbl,  slot,  det, nullptr)
-vh::iat_hook    ("Sym", det,  { .module_name = "m.exe" })
-vh::iat_hook_all("Sym", det)
-vh::plt_hook    ("lib", "sym", det)
-vh::mid_hook    (ptr,   cb,   { .offset = 0x1C })
-vh::callsite_hook(0x12AB34u, &det, &orig)
-vh::callsite_hook(&site_fn, &det, &orig)
-vh::hwbp_hook(&fn, cb)
-vh::hwbp_hook(reinterpret_cast<void*>(addr), cb, { .dr_slot = 1 })
-vh::page_guard_hook(&fn, cb, { .auto_rearm = true })
-vh::ic_hook(&my_naked_stub)
-vanhooks::global_engine().hook_mid_return(ptr, 0, enter_cb, return_cb)
-```
-
-**Hook methods**
-```cpp
-// enable/disable now return Result<> — check for errors
-if (auto r = h.enable(); !r) { /* handle error */ }
-h.disable();      // returns Result<>
-h.remove();       // void
-h.valid()     h.enabled()     h.tag()
-h.kind()      h.target()      h.detour()     h.trampoline()
-h.chain(&det2, &orig2, "tag")
-```
-
-**Group**
-```cpp
-auto g = vh::group("Name");
-g.add(vh::hook(...)).add(vh::vtable_hook(...));
-g.hook_at(0x5D5DB0u, &det);
-g.hook_at(0x5D5DB0u, &det, &orig, { .tag = "x" });
-g.hook_hwbp(addr, cb);
-g.hook_hwbp(fn_ptr, cb, { .dr_slot = 1 });
-g.hook_callsite(0x12AB34u, &det, &orig);
-g.hook_callsite_pattern("E8 ? ? ? ? 83 C4 04", 0,  &det, &orig);
-g.hook_callsite_pattern("89 04 24 E8 ? ? ? ?",  3,  &det, &orig);
-g.hook_callsite_pattern("E8 ? ? ? ? 85 C0",     0, 2, &det, &orig);  // Nth match
-g.hook_pattern("E8 ? ? ? ? 83 C4 04", -5, &det);
-g.hook_pattern("55 8B EC",             0, 1, &det);   // Nth match
-g.patch<uint8_t>(0x581E72, 32);
-g.nop(0x14E738B, 2);
-g.enable();    g.disable();    g.remove_all();
-// at() returns Result<> — no longer throws
-if (auto r = g.at("tag"); r) r->get().disable();
-for (auto& h : g) { ... }
-g.queue_enable().apply();
-```
-
-**Shutdown**
-```cpp
-vh::shutdown();    // remove all hooks — call before DLL unload
-```
-
-**Engine access**
-```cpp
-auto& eng = vanhooks::global_engine();
-eng.queue_enable(h.handle());
-eng.queue_disable(h.handle());
-eng.apply_queued();
-eng.hook_mid_return(ptr, 0, enter_cb, return_cb);
-eng.chain(h.handle(), (void*)&det2, (void**)&orig2);
-```
-
-**Telemetry suppression**
-```cpp
-#include <vh/telemetry_patch.vh>
-// Call AFTER vh::unhook::restore_defaults()
-vh::telemetry::disable_etw();
-vh::telemetry::disable_amsi();
-vh::telemetry::disable_all();
-vh::telemetry::restore();
-vh::telemetry::any_patched();
-vh::telemetry::status();
-```
-
-**Stealth subsystems**
-```cpp
-vh::unhook::restore_defaults();
-vh::unhook::restore_module("ntdll.dll");
-
-auto stub = vh::syscalls::stub_for("NtProtectVirtualMemory");
-VH_CALLSTACK_SPOOF();
-
-vh::peb_mask::apply(vh::peb_mask::All);
-vh::peb_mask::unlink_module("payload.dll");
-vh::peb_mask::restore();
-
-vh::thread_hide::hide_current_thread();
-vh::thread_hide::install_dr_camouflage();
-
-vh::sleep_obf::sleep_encrypted(3000, ptr, size);
-vh::sleep_obf::sleep_encrypted_main_text(3000);
-
-constexpr auto H_K32 = vh::api_hash::module_djb2("kernel32.dll");
-constexpr auto H_VP  = vh::api_hash::export_djb2("VirtualProtect");
-auto fn_ptr = vh::api_hash::resolve(H_K32, H_VP);
-
-auto s = vh::module_stomp::stomp(payload_span);
-vh::module_stomp::restore(std::move(*s));
-
-vh::veh_hook::install(&target_fn, cb);
-vh::veh_hook::remove_all();
-```
-
-**VanTrace**
-```cpp
-vh::Tracer tracer(cfg);
-tracer.set_sink(sink);  tracer.set_filter(filter);  tracer.start();
-tracer.attach(h, "tag");
-tracer.inner().attach(eng, handle, "tag", vanhooks::trace::AttachMode::Transparent);
-vh::CallScope scope(g_hook);
-g_hook.capture_context(ptr, sz);
-tracer.detach(g_hook.meta().handle);
-tracer.stats();  tracer.stop();
-```
-
-**Pattern scanner**
-```cpp
-vanhooks::scanner::scan_process("48 8B 05 ? ? ? ?");
-vanhooks::scanner::scan_module("game.exe", "48 89 5C 24 ?");
-vanhooks::scanner::scan_pattern(base, size, "E8 ? ? ? ? 85 C0");
-vanhooks::scanner::scan_bytes(base, size, needle_span);
-auto pat = vanhooks::scanner::parse_pattern("48 8B 05 ? ? ? ?").value();
-```
-
-**Anti-debug**
-```cpp
-auto report = vanhooks::antidebug::check_all();
-report.any_detected();  report.detection_count();  report.findings;
-```
-
-**Disassembler**
-```cpp
-vh::disasm::Disassembler dis;
-dis.decode_one(span, va);
-vh::disasm::decode_until_branch(fn, 128);
-vh::disasm::decode_prologue(fn, 14);
-vh::disasm::safe_copy_length(fn, 5);
-vh::disasm::rewrite(insns, old_va, new_va);
-vh::disasm::format_listing(insns);
-```
-
-**Injection (Windows)**
-```cpp
-vh::inject(pid, "payload.dll", { .method = vh::InjectMethod::ManualMap });
-vh::inject_from_memory(pid, pe_bytes, { .method = vh::InjectMethod::ThreadHijack });
-inj->eject();
-```
-
-**Symbols**
-```cpp
-vh::symbols::initialize();
-vh::symbols::resolve(address);
-vh::symbols::find("CreateFileW", "KernelBase");
-vh::symbols::source_location(address);
-vh::symbols::load_module("ntdll.dll");
-vh::symbols::current_stack();
-vh::symbols::demangle(raw_name);
-```
-
-**PE (Windows)**
-```cpp
-auto pe = vh::pe::open("ntdll.dll");
-pe->sections();  pe->find_export("Fn");  pe->find_export_by_ordinal(42);
-pe->imports_from("k32");  pe->find_import("k32", "VP");
-pe->find_caves(32, true);
-vh::pe::modules();
-```
-
-**Breakpoints**
-```cpp
-vh::breakpoint::set_software(addr, cb);
-vh::breakpoint::set_hardware(addr, HwCondition::Write, HwSize::Dword, cb);
-bp->remove();  bp->active();  bp->apply_to_new_thread(h);
-```
-
-**Call stack**
-```cpp
-vh::callstack::capture(2, 32);
-vh::callstack::capture_annotated();
-vh::callstack::format(frames);
-```
-
-**Network**
-```cpp
-vh::net::devices();
-auto cap = vh::net::Capture::open("eth0").value();
-cap.filter("tcp port 443").start([](vh::net::Packet p) { ... });
-auto r = vh::net::PcapReader::open("in.pcap").value();
-auto w = vh::net::PcapWriter::open("out.pcap").value();
-```
-
----
-
-<div align="center">
-<img width="100%" src="https://capsule-render.vercel.app/api?type=waving&color=0:0A0A0A,50:7A0C0C,100:0A0A0A&height=90&section=footer"/>
-</div>
+*VanHooks Functions Guide · v0.1.0*

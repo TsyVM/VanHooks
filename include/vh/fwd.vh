@@ -1,7 +1,7 @@
 #pragma once
 
 /**
- * vh/fwd.hpp
+ * vh/fwd.vh
  * Forward declarations for the vh:: public API.
  * Include this for fast compilation when only types need to be named.
  */
@@ -11,59 +11,67 @@ namespace vh {
 class Hook;
 class Group;
 class HookRegistry;
+class scoped_hook;
 class Injection;
 enum class InjectMethod : unsigned char;
 
-namespace disasm {
-    enum class Arch : unsigned char;
-    enum class InsnKind : unsigned char;
-    struct Instruction;
-    class Disassembler;
-    struct RewriteResult;
-} // namespace disasm
+// disasm types are aliases of vanhooks::disasm:: — see vh/disasm.vh
+namespace disasm {}
 
-namespace symbols {
-    struct Symbol;
-    struct SourceLocation;
-} // namespace symbols
+// symbols types are aliases of vanhooks::symbols:: — see vh/symbols.vh
+namespace symbols {}
 
 namespace config {
     struct Trampoline;
     struct API;
     struct IAT;
     struct PLT;
+    struct GOT;
     struct VTable;
     struct Mid;
+    struct HwBp;
+    struct PageGuard;
+    struct IC;
+    struct EAT;
+    struct Syscall;
+    struct TlsCallback;
+    struct Exception;
+    struct ThreadLocal;
+    struct SoftBp;
     struct Inject;
 } // namespace config
 
 // CallSiteOptions lives in vanhooks:: (the internal namespace) so forward-declare
-// it there.  vh/vh.hpp pulls in the full definition via vanhooks/vanhooks.hpp.
+// it there.  vh/vh.vh pulls in the full definition via vanhooks/vanhooks.vh.
 } // namespace vh
 namespace vanhooks { struct CallSiteOptions; }
 namespace vh {
 
-namespace pe {
-    struct Section;
-    struct Export;
-    struct Import;
-    struct CodeCave;
-    class  PeView;
-} // namespace pe
+// pe types are aliases of vanhooks::pe:: — see vh/pe.vh
+namespace pe {}
 
-namespace breakpoint {
-    class  Breakpoint;
-    enum class Action      : uint8_t;
-    enum class HwCondition : uint8_t;
-    enum class HwSize      : uint8_t;
-} // namespace breakpoint
+// breakpoint types are aliases of vanhooks::breakpoint:: — see vh/breakpoint.vh
+namespace breakpoint {}
 
-namespace callstack {
-    struct Frame;
-} // namespace callstack
+// callstack types are aliases of vanhooks::callstack:: — see vh/callstack.vh
+namespace callstack {}
 
-namespace advanced {
-    class Engine;
-} // namespace advanced
+// advanced::Engine is a using alias — see vh/advanced.vh
+namespace advanced {}
+
+// ── DefCon 2027 stealth pack ──────────────────────────────────────────────────
+namespace unhook          { struct DiffRegion; struct DiffReport; struct RestoreReport; struct Options; }
+namespace syscalls        { struct SsnResult; enum class ResolveMode : uint8_t; enum class StubKind : uint8_t; }
+namespace api_hash        { template<uint32_t, uint32_t> struct Resolver; }
+namespace telemetry       { struct PatchOutcome; }
+namespace sleep_obf       { struct Options; }
+namespace callstack_spoof { namespace detail { class ScopedSpoof; } }
+namespace thread_hide     { }
+namespace peb_mask        { enum Flags : uint32_t; }
+namespace module_stomp    { struct Stomp; struct Options; }
+namespace veh_hook        { struct Handle; struct Options; }
+
+// ── Extended injection catalogue ──────────────────────────────────────────────
+namespace inject_ex       { struct RemoteHandle; }
 
 } // namespace vh

@@ -8,12 +8,12 @@
  * ``vh/inject_ex.vh`` (17 supplementary free-function techniques).  This
  * header pulls the two together:
  *
- *   * :cpp:enum:`vh::InjectMethodEx` — 21-value superset of the original
+ *   * :cpp:enum:`vh::InjectMethodEx` — 24-value superset of the original
  *     enum.  Values 0..3 numerically match :cpp:enum:`vh::InjectMethod` so
  *     ``static_cast<InjectMethod>(m)`` is well-defined for those four.
  *
  *   * :cpp:struct:`vh::InjectRequest` — carries every possible parameter
- *     the 21 techniques might need.  Unused fields are ignored.
+ *     the 24 techniques might need.  Unused fields are ignored.
  *
  *   * :cpp:func:`vh::inject_by_method` — one call, dispatches to the
  *     right underlying implementation.  Returns a
@@ -75,13 +75,18 @@ enum class InjectMethodEx : std::uint8_t {
     // ── inject_ex: esoteric ─────────────────────────────────────────────
     AtomBombing            = 19,
     LdrRegisterNotification= 20,
+
+    // ── inject_ex: process manipulation ───────────────────────────────
+    ProcessHollowing       = 21,
+    PoolParty              = 22,
+    NtMapViewOfSection     = 23,
 };
 
 // ─────────────────────────────────────────────
 //  Request struct
 // ─────────────────────────────────────────────
 
-/// Superset of every parameter the 21 techniques accept.  Unused fields
+/// Superset of every parameter the 24 techniques accept.  Unused fields
 /// for a given method are ignored — see the per-method requirement table
 /// in ``INTEGRATION_INJECT.md`` or the ``inject_by_method`` doc-comment.
 struct InjectRequest {
@@ -104,6 +109,9 @@ struct InjectRequest {
     inject_ex::KctOptions          kct_opts;
     inject_ex::StompRemoteOptions  stomp_opts;
     inject_ex::LdrNotifyOptions    ldr_opts;
+    inject_ex::HollowOptions       hollow_opts;
+    inject_ex::PoolPartyOptions    pool_opts;
+    inject_ex::NtMapViewOptions    mapview_opts;
 
     std::string                    tag;
 };
@@ -138,7 +146,10 @@ struct InjectRequest {
  *  ModuleStompRemote            pid, dll_path, shellcode             (opt: stomp_opts)
  *  PROPagate / ExtraWindowMemory hwnd, shellcode
  *  AtomBombing                  pid, shellcode                       (opt: atom_opts)
- *  LdrRegisterNotification      pid, dll_path                        (opt: ldr_opts)
+ * *  LdrRegisterNotification      pid, dll_path                        (opt: ldr_opts)
+ *  ProcessHollowing             exe_path, pe_bytes                   (opt: hollow_opts)
+ *  PoolParty                    pid, shellcode                       (opt: pool_opts)
+ *  NtMapViewOfSection           pid, shellcode                       (opt: mapview_opts)
  * ============================= ==========================================================
  *
  * Returns the technique-specific :cpp:struct:`vh::inject_ex::RemoteHandle`

@@ -1,7 +1,7 @@
 #pragma once
 
 /**
- * vh/disasm.hpp — Disassembler public API
+ * vh/disasm.vh — Disassembler public API
  *
  * Exposes the VanHooks embedded Zydis-backed disassembler to end users.
  * The types live in vanhooks::disasm::; this header brings them into vh::disasm::
@@ -43,7 +43,7 @@
 #include <vector>
 #include <string>
 
-#include <vanhooks/disasm.hpp>
+#include <vanhooks/disasm.vh>
 #include "result.vh"
 
 namespace vh::disasm {

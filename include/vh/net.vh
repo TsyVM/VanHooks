@@ -1,7 +1,7 @@
 #pragma once
 
 /**
- * vh/net.hpp  —  VanHooks Network Layer
+ * vh/net.vh  —  VanHooks Network Layer
  *
  * Live capture, offline pcap/pcapng read/write, BPF filtering, and full
  * protocol-layer parsing — all compiled directly into libvanhooks.
@@ -14,7 +14,7 @@
  *
  * Quick start
  * ───────────
- *   #include <vh/vh.vh>   // pulls net.hpp in automatically
+ *   #include <vh/vh.vh>   // pulls net.vh in automatically
  *
  *   // Hook something
  *   auto hook = vh::hook(&target, &detour);
@@ -29,7 +29,7 @@
  */
 
 #ifndef VH_NET_ENABLED
-#  error "vh/net.hpp included but VH_ENABLE_NET=OFF — re-run CMake with -DVH_ENABLE_NET=ON"
+#  error "vh/net.vh included but VH_ENABLE_NET=OFF — re-run CMake with -DVH_ENABLE_NET=ON"
 #endif
 
 // ── Internal network stack headers ───────────────────────────────────────────

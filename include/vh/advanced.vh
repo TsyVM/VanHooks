@@ -1,7 +1,7 @@
 #pragma once
 
 /**
- * vh/advanced.hpp
+ * vh/advanced.vh
  * Direct Engine access for power users.
  *
  * vh::advanced::engine() returns a reference to the global Engine.
@@ -12,7 +12,7 @@
  * Engine::Config control, contact us about a source license.
  */
 
-#include <vanhooks/vanhooks.hpp>
+#include <vanhooks/vanhooks.vh>
 
 namespace vh::advanced {
 
