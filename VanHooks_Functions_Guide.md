@@ -1,9 +1,19 @@
+<div align="center">
+
+<img src="vh-logo.png" width="400" alt="VanHooks"/>
+
 # VanHooks — Functions Guide
 
 **Public API Reference · v0.1.0**  
 C++23 · Windows / Linux / macOS · x86 / x64 / ARM64
 
----
+[![License: MIT](https://img.shields.io/badge/License-MIT-DC2626?style=for-the-badge&labelColor=0D0D0D)](LICENSE)
+[![C++23](https://img.shields.io/badge/C%2B%2B-23-DC2626?style=for-the-badge&labelColor=0D0D0D&logo=cplusplus&logoColor=DC2626)](https://en.cppreference.com/w/cpp/23)
+[![TeamVanilla](https://img.shields.io/badge/Team-TeamVanilla-DC2626?style=for-the-badge&labelColor=0D0D0D)](https://www.teamvanilla.org/)
+
+</div>
+
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
 
 One include is all you need:
 
@@ -13,26 +23,21 @@ One include is all you need:
 
 Everything in this document lives in the `vh::` namespace unless stated otherwise.
 
----
+<div align="center">
 
-## Table of Contents
+### 📑 Contents
 
-1. [Legend](#part-i--legend)
-2. [Result Type and Error Handling](#part-ii--result-type-and-error-handling)
-3. [Level 1 API — One-line hooks](#part-iii--level-1-api)
-4. [Level 2 API — Explicit hook types](#part-iv--level-2-api)
-5. [Hook Object Methods](#part-v--hook-object-methods)
-6. [Group](#part-vi--group)
-7. [HookRegistry](#part-vii--hookregistry)
-8. [Configuration Structs](#part-viii--configuration-structs)
-9. [Error Codes](#part-ix--error-codes)
-10. [Quick Reference](#part-x--quick-reference-card)
-11. [Process Injection](#part-xi--process-injection)
-12. [Stealth Helpers](#part-xii--stealth-helpers-vhinject_stealth)
+[Legend](#-part-i--legend) · [Result Type](#-part-ii--result-type-and-error-handling) · [Level 1 API](#-part-iii--level-1-api) · [Level 2 API](#-part-iv--level-2-api)
 
----
+[Hook Object](#-part-v--hook-object-methods) · [Group](#-part-vi--group) · [HookRegistry](#-part-vii--hookregistry) · [Configuration](#%EF%B8%8F-part-viii--configuration-structs)
 
-## Part I — Legend
+[Error Codes](#-part-ix--error-codes) · [Quick Reference](#-part-x--quick-reference-card) · [Process Injection](#-part-xi--process-injection) · [Stealth Helpers](#-part-xii--stealth-helpers-vhinject_stealth)
+
+</div>
+
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
+
+## 📖 Part I — Legend
 
 Seven words. Everything else is detail.
 
@@ -64,9 +69,9 @@ Deactivate a hook without removing it. The target function behaves as if the hoo
 
 Permanently uninstall a hook and release all resources associated with it. The `Hook` object becomes invalid after `remove()`. In normal use you do not call this manually — the `Hook` destructor calls it for you (RAII).
 
----
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
 
-## Part II — Result Type and Error Handling
+## ❌ Part II — Result Type and Error Handling
 
 Every hook creation function returns `Result<Hook>`, not `Hook` directly. `Result<T>` is an alias for `std::expected<T, vh::Error>`.
 
@@ -110,9 +115,9 @@ std::string_view vh::error_to_string(vh::Error e) noexcept;
 
 Returns a human-readable name for any `Error` code. Useful for logging. The returned `string_view` points to static storage — do not free it.
 
----
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
 
-## Part III — Level 1 API
+## ⚡ Part III — Level 1 API
 
 *Beginner — one line, zero concepts required.*
 
@@ -204,9 +209,9 @@ BOOL WINAPI hk_mbw(HWND h, LPCWSTR t, LPCWSTR c, UINT f) {
 auto hook = vh::hook("user32", "MessageBoxW", &hk_mbw, &orig_mbw);
 ```
 
----
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
 
-## Part IV — Level 2 API
+## 🪝 Part IV — Level 2 API
 
 *Explicit hook types — same `Hook` object, more control.*
 
@@ -444,9 +449,9 @@ auto h = vh::mid_hook(game_update_ptr,
     { .offset = 0x1C, .tag = "Game.HealthReadback" });
 ```
 
----
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
 
-## Part V — Hook Object Methods
+## 🔒 Part V — Hook Object Methods
 
 Every creation function returns `Result<Hook>`. Dereference the result to get the `Hook`. The `Hook` is move-only — it cannot be copied.
 
@@ -514,9 +519,9 @@ base.remove();
 | `HookKind::VTable` | `vtable_hook` |
 | `HookKind::Mid` | `mid_hook` |
 
----
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
 
-## Part VI — Group
+## 📦 Part VI — Group
 
 A `Group` owns a collection of `Hook` objects and manages their lifecycle together. All enable/disable operations on a `Group` happen inside a single thread-suspension window, making batch operations significantly cheaper than calling `enable()` on each hook individually.
 
@@ -592,9 +597,9 @@ for (auto& h : grp) {
 }
 ```
 
----
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
 
-## Part VII — HookRegistry
+## 🏭 Part VII — HookRegistry
 
 `HookRegistry` is a process-wide singleton that owns named `Group`s. Use it when multiple modules (DLLs) in the same process need to register hooks independently and a single shutdown call should clean all of them up.
 
@@ -629,9 +634,9 @@ vh::HookRegistry::global().register_group(std::move(net));
 vh::HookRegistry::global().remove_all();
 ```
 
----
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
 
-## Part VIII — Configuration Structs
+## ⚙️ Part VIII — Configuration Structs
 
 All config structs live in the `vh::config::` namespace and are defined in `<vh/config.vh>`, which is included automatically by `<vh/vh.vh>`.
 
@@ -737,9 +742,9 @@ struct Mid {
 | `thread_safe` | `bool` | `true` | Same meaning as `config::Trampoline::thread_safe`. |
 | `tag` | `std::string` | `""` | Label for this hook. |
 
----
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
 
-## Part IX — Error Codes
+## 🚨 Part IX — Error Codes
 
 All error codes are values of the `vh::Error` enum (`uint32_t` underlying type). Use `vh::error_to_string(e)` to get the name as a `string_view`.
 
@@ -809,9 +814,9 @@ All error codes are values of the `vh::Error` enum (`uint32_t` underlying type).
 | `ChainBaseNotFound` | 601 | The base hook passed to `hook.chain()` is not known to the engine, likely because it was already removed. |
 | `ChainOrderViolation` | 602 | A chain link was removed before its base hook. Always remove chain links in reverse order of creation. |
 
----
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
 
-## Part X — Quick Reference Card
+## 📋 Part X — Quick Reference Card
 
 ### Include
 
@@ -872,11 +877,9 @@ vh::HookRegistry::global().remove_all();
 if (!r) printf("%s\n", vh::error_to_string(r.error()).data());
 ```
 
----
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
 
----
-
-## Part XI — Process Injection
+## 💉 Part XI — Process Injection
 
 ```cpp
 #include <vh/inject.vh>
@@ -1006,9 +1009,9 @@ The unified API provides `vh::InjectMethodEx` (24 values) and `vh::inject_by_met
 | **Window-message (2)** | PROP_PROPAGATE, Extra Window Memory |
 | **Process-manip (3)** | Process Hollowing, PoolParty, NtMapViewOfSection |
 
----
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
 
-## Part XII — Stealth Helpers (`vh::inject_stealth`)
+## 🛡️ Part XII — Stealth Helpers (`vh::inject_stealth`)
 
 ```cpp
 #include <vh/inject_stealth.vh>
@@ -1156,7 +1159,7 @@ RemoteAlloc vh_write_shellcode(HANDLE proc,
 
 Atomic shellcode deployment: allocates `PAGE_READWRITE`, writes the code, then flips to `PAGE_EXECUTE_READ`. No `PAGE_EXECUTE_READWRITE` memory ever exists. Returns the remote allocation address and size. The caller is responsible for freeing via `vh_free_remote` after the shellcode has executed.
 
----
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
 
 ### Quick Reference — Injection
 
@@ -1195,6 +1198,14 @@ auto  sc = vh_write_shellcode(p, code_span);
 vh_close(p);
 ```
 
----
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
+
+<div align="center">
 
 *VanHooks Functions Guide · v0.1.0*
+
+<sub>Built and maintained by <a href="https://github.com/TsyVM">TsyVM</a> · <a href="https://www.teamvanilla.org/">TeamVanilla</a></sub>
+
+<img width="100%" src="https://capsule-render.vercel.app/api?type=waving&color=0:DC2626,100:0D0D0D&height=80&section=footer"/>
+
+</div>
