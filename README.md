@@ -514,7 +514,13 @@ VanHooksSDK/
 
 ## ⚖️ License
 
-MIT — see [LICENSE](LICENSE)
+This SDK — the public headers and prebuilt libraries — is released under the **MIT License**. See [LICENSE](LICENSE).
+
+### Source License
+
+The full VanHooks source code is available under a **commercial source license**. A source license gives you access to the complete implementation, the ability to build custom configurations, target additional architectures, and integrate VanHooks into proprietary toolchains.
+
+For pricing and licensing inquiries, contact **[TeamVanilla](https://www.teamvanilla.org/)** or reach out on [Discord](https://discord.gg/TeJHcV9EJW).
 
 <div align="center">
 
