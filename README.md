@@ -8,7 +8,7 @@
 [![Linux](https://img.shields.io/badge/Linux-x64%20%7C%20ARM64-FCC624?logo=linux&logoColor=black)](lib/)
 [![macOS](https://img.shields.io/badge/macOS-x64%20%7C%20ARM64-000000?logo=apple)](lib/)
 
-VanHooks is a production-grade, cross-platform function hooking and process injection library for C++23. It provides inline trampoline hooks, import table hooks, procedure linkage table hooks, virtual function table hooks, mid-function register-context hooks, and a 24-technique injection catalogue — all through a single unified API backed by `std::expected` error handling and RAII lifetime management.
+VanHooks is a production-grade, cross-platform function hooking and process injection library for C++23. It provides inline trampoline hooks, import table hooks, procedure linkage table hooks, virtual function table hooks, mid-function register-context hooks, and a 24-technique injection catalogue — all through a single unified API backed by `std::expected` error handling and RAII lifetime management
 
 All injection paths use indirect syscalls (executing at ntdll gadget addresses) so kernel stack walks see a legitimate origin. No `PAGE_EXECUTE_READWRITE` memory is ever allocated — all code pages follow the RW → RX lifecycle.
 
