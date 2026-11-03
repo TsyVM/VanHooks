@@ -34,7 +34,6 @@ Everything in this document lives in the `vh::` namespace unless stated otherwis
 [Error Codes](#-part-ix--error-codes) · [Quick Reference](#-part-x--quick-reference-card) · [Process Injection](#-part-xi--process-injection) · [Stealth Helpers](#-part-xii--stealth-helpers-vhinject_stealth)
 
 [Phase 10 — Hardening](#-part-xiii--phase-10-hardening) · [Shared Library ABI](#-part-xiv--shared-library-abi)
-
 </div>
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
@@ -1207,6 +1206,9 @@ vh_close(p);
 Phase 10 introduces 19 new modules covering core hardening, anti-cheat evasion on Windows and Linux, extended injection, and hypervisor-assisted hooks. All modules are optional — include only what you need.
 
 ---
+<div align="center">
+
+### Core — Polymorphic Trampolines `<vh/core/polymorphic.vh>`
 
 ### Core — Polymorphic Trampolines `<vh/core/polymorphic.vh>`
 

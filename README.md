@@ -54,7 +54,6 @@ VanHooks is distributed as **precompiled static libraries with public API header
 [Process Injection](#-process-injection) · [Error Handling](#-error-handling) · [HookRegistry](#-multi-module-projects--hookregistry) · [Platform Support](#-platform-support)
 
 [Stealth & Hardening](#-stealth--hardening) · [Shared Library](#-shared-library-abi) · [Package Layout](#-package-layout)
-
 </div>
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
@@ -525,7 +524,6 @@ VanHooks can be built as a shared library (`.dll`/`.so`/`.dylib`) from source. A
 The precompiled `.lib` files in this SDK are **static libraries** — `VH_API` resolves to nothing and all symbols are linked directly. Shared library builds require the full source license.
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
-
 ## 📁 Package Layout
 
 ```
