@@ -24,7 +24,7 @@
 #include "hook.vh"
 #include "detail/callsite_bridge.vh"
 #include "config.vh"
-#include "veh_hook.vh"
+#include "hooks/veh_hook.vh"
 
 namespace vh {
 

@@ -6,6 +6,8 @@
  * Include this for fast compilation when only types need to be named.
  */
 
+#include <vh/export.vh>
+
 namespace vh {
 
 class Hook;
@@ -59,7 +61,6 @@ namespace callstack {}
 // advanced::Engine is a using alias — see vh/advanced.vh
 namespace advanced {}
 
-// ── DefCon 2027 stealth pack ──────────────────────────────────────────────────
 namespace unhook          { struct DiffRegion; struct DiffReport; struct RestoreReport; struct Options; }
 namespace syscalls        { struct SsnResult; enum class ResolveMode : uint8_t; enum class StubKind : uint8_t; }
 namespace api_hash        { template<uint32_t, uint32_t> struct Resolver; }

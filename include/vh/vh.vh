@@ -20,79 +20,78 @@
 #include "group.vh"
 #include "detail/callsite_bridge.vh"
 #include "advanced.vh"
-#include "veh_hook.vh"
+#include "hooks/veh_hook.vh"
 
 // ── Disassembler (always available — Zydis is always linked) ────────────────
 #include "disasm.vh"
 
 // ── VanTrace instrumentation layer (opt-out via VH_ENABLE_TRACE=OFF) ─────────
 #if defined(VH_TRACE_ENABLED)
-#  include "trace.vh"
+#  include "analysis/trace.vh"
 #endif
 
 // ── Optional network layer ───────────────────────────────────────────────────
 #ifdef VH_NET_ENABLED
-#  include "net.vh"
+#  include "analysis/net.vh"
 #endif
 
 // ── Optional injection layer ─────────────────────────────────────────────────
 #ifdef VH_INJECT_ENABLED
-#  include "inject.vh"
+#  include "inject/inject.vh"
 #endif
 
 // ── Optional symbol resolution layer ─────────────────────────────────────────
 #ifdef VH_SYMBOLS_ENABLED
-#  include "symbols.vh"
+#  include "analysis/symbols.vh"
 #endif
 
 // ── Optional PE introspection layer ──────────────────────────────────────────
 #ifdef VH_PE_ENABLED
-#  include "pe.vh"
+#  include "analysis/pe.vh"
 #endif
 
 // ── Optional breakpoint layer ─────────────────────────────────────────────────
 #ifdef VH_BREAKPOINT_ENABLED
-#  include "breakpoint.vh"
+#  include "hooks/breakpoint.vh"
 #endif
 
 // ── Optional callstack capture layer ─────────────────────────────────────────
 #ifdef VH_CALLSTACK_ENABLED
-#  include "callstack.vh"
+#  include "analysis/callstack.vh"
 #endif
 
-// ── DefCon 2027 stealth pack (each optional, Windows-only) ───────────────────
 #ifdef VH_UNHOOK_ENABLED          //  1: NTDLL / kernel32 unhook
-#  include "unhook.vh"
+#  include "vigil/unhook.vh"
 #endif
 #ifdef VH_SYSCALLS_ENABLED        //  2: Direct/indirect syscall gate
-#  include "syscalls.vh"
+#  include "vigil/syscalls.vh"
 #endif
 #ifdef VH_APIHASH_ENABLED         //  3: API-hash / PEB-walk resolver
-#  include "api_hash.vh"
+#  include "vigil/api_hash.vh"
 #endif
 #ifdef VH_TELEMETRY_PATCH_ENABLED //  4: ETW + AMSI suppression
-#  include "telemetry_patch.vh"
+#  include "vigil/telemetry_patch.vh"
 #endif
 #ifdef VH_SLEEP_OBF_ENABLED       //  5: Sleep obfuscation
-#  include "sleep_obf.vh"
+#  include "vigil/sleep_obf.vh"
 #endif
 #ifdef VH_CALLSTACK_SPOOF_ENABLED //  6: Return-address spoof
-#  include "callstack_spoof.vh"
+#  include "vigil/callstack_spoof.vh"
 #endif
 #ifdef VH_THREAD_HIDE_ENABLED     //  7: Thread hide + DR camouflage
-#  include "thread_hide.vh"
+#  include "vigil/thread_hide.vh"
 #endif
 #ifdef VH_PEB_MASK_ENABLED        //  8: PEB masking
-#  include "peb_mask.vh"
+#  include "vigil/peb_mask.vh"
 #endif
 #ifdef VH_MODULE_STOMP_ENABLED    //  9: Module stomping
-#  include "module_stomp.vh"
+#  include "vigil/module_stomp.vh"
 #endif
 
 // ── Extended injection catalogue ─────────────────────────────────────────────
 #ifdef VH_INJECT_EX_ENABLED
-#  include "inject_ex.vh"
-#  include "inject_unified.vh"
+#  include "inject/inject_ex.vh"
+#  include "inject/inject_unified.vh"
 #endif
 
 #include <vanhooks/vanhooks.vh>
