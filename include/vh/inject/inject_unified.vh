@@ -80,6 +80,17 @@ enum class InjectMethodEx : std::uint8_t {
     ProcessHollowing       = 21,
     PoolParty              = 22,
     NtMapViewOfSection     = 23,
+
+    // ── Phase 23: Linux / macOS / Android ──────────────────────────────
+    Ptrace                 = 24,
+    ProcessVmWritev        = 25,
+    LdPreload              = 26,
+    ProcMem                = 27,
+    TaskForPid             = 28,
+    DyldInsert             = 29,
+    AndroidPtrace          = 30,
+    ReflectiveV2           = 31,
+    ManualMapV2            = 32,
 };
 
 // ─────────────────────────────────────────────
@@ -97,6 +108,7 @@ struct InjectRequest {
     std::wstring_view         dll_path;             ///< SetWindowsHookEx / LdrNotify / module-stomp host.
     void*                     hwnd          = nullptr;   ///< PROPagate / EWM.
     std::uintptr_t            callback_slot_va = 0; ///< Threadless callback slot in target VA.
+    std::string_view          so_path;              ///< POSIX shared-object / dylib path (Phase 23).
 
     // ── Payload ─────────────────────────────────────────────────────────
     std::span<const std::uint8_t> shellcode;         ///< Most techniques.

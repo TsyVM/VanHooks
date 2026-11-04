@@ -125,6 +125,109 @@ enum class Error : uint32_t {
 
     // Call-stack capture
     CallstackCaptureFailed  = 900,  // RtlCaptureStackBackTrace / backtrace returned 0
+
+    // Phase 21 — Hook Engine v2
+    ConditionNotMet         = 1000, // conditional hook predicate returned false (info-only)
+    LazyNotResolved         = 1001, // lazy hook has not yet been triggered
+    SwapNotSupported        = 1002, // hook kind does not support in-place detour swap
+    PriorityConflict        = 1003, // two hooks on the same target share a priority value
+    ExitScanFailed          = 1004, // control-flow analysis could not enumerate return sites
+
+    // Phase 22 — Cross-Platform Hook Parity
+    DyldInterposeFailed     = 1100, // macOS DYLD_INSERT_LIBRARIES interpose failed
+    MachOImportNotFound     = 1101, // macOS Mach-O lazy/non-lazy symbol pointer not found
+    PtraceSetFailed         = 1102, // Linux ptrace(POKEUSR) for debug register failed
+    MachThreadSetFailed     = 1103, // macOS thread_set_state for debug register failed
+    VeneerAllocFailed       = 1104, // ARM64 veneer stub allocation failed (±128 MB)
+    RiscVUnsupported        = 1105, // RISC-V target requires rv64gc disassembler (not yet loaded)
+
+    // Phase 23 — Injection Engine v2
+    PtraceAttachFailed      = 1200,
+    ProcessVmWriteFailed    = 1201,
+    TaskForPidFailed        = 1202,
+    AndroidLinkerFailed     = 1203,
+    ShellcodeGenFailed      = 1204,
+    ManualMapV2Failed       = 1205,
+    ReflectiveTlsFailed     = 1206,
+
+    // Phase 24 — Advanced Hook Techniques
+    RelayPoolExhausted      = 1300,
+    CowSplitFailed          = 1301,
+    IdtAccessDenied         = 1302,
+    MsrAccessDenied         = 1303,
+    ExceptionPortFailed     = 1304,
+    SignalHandlerFailed     = 1305,
+    JitCacheStale           = 1306,
+
+    // Phase 25 — Analysis Subsystem v2
+    ElfInvalidHeader        = 1400,
+    ElfNoSymtab             = 1401,
+    ElfNoDynamic            = 1402,
+    MachOInvalidHeader      = 1403,
+    MachOFatSliceNotFound   = 1404,
+    MachOCodeSigInvalid     = 1405,
+    CfgBuildFailed          = 1406,
+    BinaryDiffFailed        = 1407,
+    PatternCompileFailed    = 1408,
+    RttiNotFound            = 1409,
+    FunctionBoundaryFailed  = 1410,
+
+    // Phase 26 — Network Layer v2
+    PacketTimingFailed      = 1500,
+    DnsResolveFailed        = 1501,
+    TlsFingerprintFailed    = 1502,
+    ReplaySyncFailed        = 1503,
+    InterceptDriverFailed   = 1504,
+    CertPinDetectFailed     = 1505,
+    WinsockHookFailed       = 1506,
+
+    // Phase 27 — VanTrace v2
+    TraceInitFailed         = 1600,
+    TraceFilterInvalid      = 1601,
+    TraceRemoteBindFailed   = 1602,
+    TraceEtwRegisterFailed  = 1603,
+    TraceFlameExportFailed  = 1604,
+    TraceIdaExportFailed    = 1605,
+
+    // Phase 28 — Test Suite
+    TestHarnessFailed       = 1700,
+    TestTimeoutExpired      = 1701,
+    TestAssertionFailed     = 1702,
+
+    // Phase 29 — Fuzzing Infrastructure
+    FuzzTargetInvalid       = 1800,
+    FuzzCorpusLoadFailed    = 1801,
+    FuzzSanitizerMissing    = 1802,
+    FuzzCrashDetected       = 1803,
+
+    // Phase 30 — CI/CD Pipeline
+    CiWorkflowInvalid       = 1900,
+    CiJobFailed             = 1901,
+    CiSdkSyncMismatch       = 1902,
+    CiReleaseBuildFailed    = 1903,
+    CiCoverageReportFailed  = 1904,
+    CiStaticAnalysisFailed  = 1905,
+
+    // Phase 31 — API Documentation
+    DocGenerateFailed       = 2000,
+    DocModuleNotFound       = 2001,
+    DocOutputPathInvalid    = 2002,
+
+    // Phase 32 — SDK Improvements
+    SdkSyncFailed           = 2100,
+    SdkVersionMismatch      = 2101,
+    SdkMinimalBuildFailed   = 2102,
+    SdkBindingGenFailed     = 2103,
+
+    // Phase 33 — Examples & Tutorials
+    ExampleNotFound         = 2200,
+    ExampleBuildFailed      = 2201,
+
+    // Phase 34 — Performance Pass
+    BenchmarkFailed         = 2300,
+    BenchmarkTimeout        = 2301,
+    ArenaAllocFailed        = 2302,
+
 };
 
 std::string_view error_to_string(Error e) noexcept;
@@ -265,6 +368,11 @@ struct ReturnContext {
     double   retval_xmm1;  // XMM1 low 64 bits
     uint64_t hook_id;      // stable hook identifier (matches HookHandle::id)
     uint64_t real_ret_addr;// the caller's actual return address
+    // Phase 21: duration tracking — entry_tsc is captured by the entry thunk
+    // (QPC ticks on Windows, steady_clock ticks on POSIX).  duration_ns is
+    // computed by the return stub before the callback fires.
+    uint64_t entry_tsc;    // timestamp counter at function entry
+    uint64_t duration_ns;  // wall-clock nanoseconds from entry to return
 #elif defined(VH_ARCH_ARM64)
     // Full ARM64 return register set.
     // x0/x1 carry integer/pointer results (or the two halves of a 128-bit int).
@@ -278,11 +386,17 @@ struct ReturnContext {
     uint64_t retval_v1[2]; // v1 lo/hi 64-bit lanes
     uint64_t hook_id;
     uint64_t real_ret_addr;
+    uint64_t entry_tsc;
+    uint64_t duration_ns;
 #elif defined(VH_ARCH_X86)
     uint32_t retval_eax;
     uint32_t retval_edx;
     uint32_t hook_id;
     uint32_t real_ret_addr;
+    uint32_t entry_tsc_lo;
+    uint32_t entry_tsc_hi;
+    uint32_t duration_ns_lo;
+    uint32_t duration_ns_hi;
 #endif
 };
 
@@ -306,6 +420,10 @@ struct HookDesc {
     void*       detour;       // replacement function address
     void*       trampoline;   // callable original (trampoline hooks only)
     bool        enabled;
+    int32_t     priority = 0; // Phase 21: ordering on same target (higher = first)
+    bool        stats_enabled = false; // Phase 21: per-hook statistics active
+    bool        conditional   = false; // Phase 21: predicate-gated hook
+    bool        lazy          = false; // Phase 21: deferred until first call
     std::string tag;          // optional human-readable label
 };
 
@@ -538,6 +656,958 @@ struct ThreadLocalOptions {
     std::string tag;
 
     [[nodiscard]] constexpr bool valid() const noexcept { return true; }
+};
+
+// ─────────────────────────────────────────────
+//  Phase 21 — Hook Engine v2 types
+// ─────────────────────────────────────────────
+
+// Hook statistics snapshot (non-atomic copy for external consumption).
+// Obtained via Engine::stats() or Hook::stats().
+struct HookStatsSnapshot {
+    uint64_t call_count         = 0;  // total invocations recorded
+    uint64_t total_duration_ns  = 0;  // cumulative detour duration (nanoseconds)
+    uint64_t average_duration_ns= 0;  // total_duration_ns / call_count (0 if no calls)
+    uint64_t max_duration_ns    = 0;  // worst-case single-call duration
+    int64_t  last_call_timestamp= 0;  // steady_clock ticks at last invocation (0 = never)
+};
+
+// Condition predicate for conditional hooks.
+// target: the original function address the hook is installed on.
+// user_data: opaque pointer passed through ConditionalOptions.
+// Must be safe to call from any thread; must not throw.
+using ConditionFn = bool (*)(void* target, void* user_data) noexcept;
+
+// ── Conditional hook options ──────────────────
+//
+// Installs a hook that only redirects to the detour when condition()
+// returns true.  When the predicate returns false the original function
+// executes with near-zero overhead.  Internally uses a SoftBp/VEH thunk
+// that evaluates the predicate before dispatch.
+
+struct ConditionalOptions {
+    ConditionFn condition   = nullptr; // required — null returns InvalidArgument
+    void*       user_data   = nullptr; // forwarded to condition()
+    int32_t     priority    = 0;       // hook ordering on same target (higher = first)
+    bool        thread_safe = true;
+    bool        stats       = false;   // enable per-hook call statistics
+    std::string tag;
+
+    [[nodiscard]] constexpr bool valid() const noexcept { return condition != nullptr; }
+};
+
+// ── Lazy hook options ─────────────────────────
+//
+// Defers actual trampoline installation until the target function is
+// called for the first time.  An INT3 + VEH thunk captures the first
+// hit, installs the real hook, and replays the call.  Saves trampoline
+// pool memory for rarely-used hooks.
+
+struct LazyOptions {
+    int32_t     priority    = 0;
+    bool        thread_safe = true;
+    bool        stats       = false;
+    std::string tag;
+
+    [[nodiscard]] constexpr bool valid() const noexcept { return true; }
+};
+
+// ── Function-exit hook options ────────────────
+//
+// Patches every RET/RETN instruction in the target function body so
+// the callback fires on each return path.  Requires control-flow
+// analysis via Zydis to enumerate return sites.  Distinct from
+// hook_mid_return() which patches a single entry point.
+
+struct ExitHookOptions {
+    size_t      max_scan_bytes = 4096; // how far to disassemble from target
+    int32_t     priority       = 0;
+    bool        thread_safe    = true;
+    bool        stats          = false;
+    std::string tag;
+
+    [[nodiscard]] constexpr bool valid() const noexcept { return true; }
+};
+
+// ─────────────────────────────────────────────
+//  Phase 22 — Cross-Platform Hook Parity types
+// ─────────────────────────────────────────────
+
+// ── macOS dyld interpose ──────────────────────
+// Generates a __DATA,__interpose section entry. Requires the library
+// to be loaded via DYLD_INSERT_LIBRARIES. macOS only; returns
+// Unsupported on other platforms.
+
+struct DyldInterposeOptions {
+    std::string original_symbol; // e.g. "_malloc"
+    std::string tag;
+
+    [[nodiscard]] constexpr bool valid() const noexcept {
+        return !original_symbol.empty();
+    }
+};
+
+// ── macOS Mach-O import hook ──────────────────
+// Patches lazy/non-lazy symbol pointers in __DATA,__la_symbol_ptr or
+// __DATA,__nl_symbol_ptr of the target library.
+
+struct MachOImportOptions {
+    std::string library_name;  // e.g. "libSystem.B.dylib"
+    std::string symbol_name;   // e.g. "_malloc"
+    std::string tag;
+
+    [[nodiscard]] constexpr bool valid() const noexcept {
+        return !library_name.empty() && !symbol_name.empty();
+    }
+};
+
+// ── ARM64 veneer stub options ─────────────────
+// Controls veneer allocation for ARM64 B/BL instructions that exceed
+// the ±128 MB direct branch range.
+
+struct VeneerOptions {
+    bool        prefer_adrp_ldr = true;  // prefer ADRP+LDR over veneer chain
+    std::string tag;
+
+    [[nodiscard]] constexpr bool valid() const noexcept { return true; }
+};
+
+// ─────────────────────────────────────────────
+//  Phase 23 — Injection Engine v2 types
+// ─────────────────────────────────────────────
+
+enum class InjectPlatform : uint8_t {
+    Auto,       // detect from target PID
+    LinuxX64,
+    LinuxARM64,
+    MacOSX64,
+    MacOSARM64,
+    AndroidARM64,
+    AndroidARM32,
+};
+
+enum class ShellcodeArch : uint8_t {
+    X86,
+    X64,
+    ARM64,
+    ARM32,
+};
+
+struct ShellcodeGenOptions {
+    ShellcodeArch     arch            = ShellcodeArch::X64;
+    bool              null_free       = true;    // avoid null bytes
+    bool              pic             = true;    // position-independent
+    size_t            max_size        = 4096;
+    std::string       tag;
+};
+
+struct InjectRecommendResult {
+    uint8_t           method_id       = 0;       // InjectMethodEx value
+    std::string       method_name;
+    uint8_t           stealth_score   = 0;       // 0-100
+    uint8_t           compat_score    = 0;       // 0-100
+    std::string       notes;
+};
+
+struct ManualMapV2Options {
+    bool              handle_tls      = true;    // resolve TLS callbacks
+    bool              handle_seh      = true;    // register exception tables
+    bool              handle_delay_imports = true;
+    bool              handle_static_init   = true;  // run CRT initializers
+    bool              handle_apisets  = true;    // resolve API set redirections
+    bool              zero_header    = true;    // erase PE header after mapping
+    std::string       tag;
+};
+
+struct ReflectiveV2Options {
+    bool              handle_tls      = true;
+    bool              handle_exceptions = true;
+    bool              handle_delay_imports = true;
+    std::string       tag;
+};
+
+// ─────────────────────────────────────────────
+//  Phase 24 — Advanced Hook Techniques types
+// ─────────────────────────────────────────────
+
+struct RelayOptions {
+    size_t            pool_size       = 64;      // max hooks in the relay pool
+    bool              thread_safe     = true;
+    std::string       tag;
+};
+
+struct CowHookOptions {
+    bool              thread_safe     = true;
+    std::string       tag;
+};
+
+struct SignalHookOptions {
+    int               signal_num      = 5;       // SIGTRAP by default
+    std::string       tag;
+};
+
+struct ExceptionPortOptions {
+    std::string       tag;
+};
+
+struct JitHookOptions {
+    size_t            monitor_interval_ms = 100; // re-check JIT cache
+    bool              auto_repatch    = true;    // re-patch on JIT recompile
+    std::string       tag;
+};
+
+// ─────────────────────────────────────────────
+//  Phase 25 — Analysis Subsystem v2 types
+// ─────────────────────────────────────────────
+
+// ── ELF parser types ────────────────────────
+
+struct ElfSection {
+    std::string name;
+    uint32_t    type        = 0;
+    uint64_t    flags       = 0;
+    uint64_t    address     = 0;
+    uint64_t    offset      = 0;
+    uint64_t    size        = 0;
+    uint32_t    link        = 0;
+    uint32_t    info        = 0;
+    uint64_t    addralign   = 0;
+    uint64_t    entsize     = 0;
+};
+
+struct ElfSymbol {
+    std::string  name;
+    uint64_t     value       = 0;
+    uint64_t     size        = 0;
+    uint8_t      bind        = 0;   // STB_LOCAL/GLOBAL/WEAK
+    uint8_t      type        = 0;   // STT_FUNC/OBJECT/...
+    uint16_t     section_idx = 0;
+};
+
+struct ElfDynEntry {
+    int64_t  tag   = 0;
+    uint64_t value = 0;
+};
+
+struct ElfRelocation {
+    uint64_t offset  = 0;
+    uint32_t type    = 0;
+    uint32_t sym_idx = 0;
+    int64_t  addend  = 0;
+};
+
+// ── Mach-O parser types ─────────────────────
+
+struct MachOSection {
+    std::string  segname;
+    std::string  sectname;
+    uint64_t     addr       = 0;
+    uint64_t     size       = 0;
+    uint32_t     offset     = 0;
+    uint32_t     flags      = 0;
+};
+
+struct MachOSymbol {
+    std::string  name;
+    uint64_t     value  = 0;
+    uint8_t      type   = 0;
+    uint8_t      sect   = 0;
+    int16_t      desc   = 0;
+};
+
+struct MachOLoadCommand {
+    uint32_t cmd  = 0;
+    uint32_t size = 0;
+    std::vector<uint8_t> data;
+};
+
+struct MachOFatSlice {
+    uint32_t cpu_type    = 0;
+    uint32_t cpu_subtype = 0;
+    uint64_t offset      = 0;
+    uint64_t size        = 0;
+};
+
+// ── Control flow graph ──────────────────────
+
+struct BasicBlock {
+    uint64_t                  start_addr = 0;
+    uint64_t                  end_addr   = 0;
+    std::vector<uint64_t>     successors;
+    std::vector<uint64_t>     predecessors;
+    bool                      is_entry   = false;
+    bool                      is_exit    = false;
+};
+
+enum class CfgEdgeKind : uint8_t {
+    Fallthrough,
+    ConditionalTrue,
+    ConditionalFalse,
+    Unconditional,
+    Call,
+    Return,
+    Indirect,
+};
+
+struct CfgEdge {
+    uint64_t    from  = 0;
+    uint64_t    to    = 0;
+    CfgEdgeKind kind  = CfgEdgeKind::Fallthrough;
+};
+
+struct ControlFlowGraph {
+    std::vector<BasicBlock> blocks;
+    std::vector<CfgEdge>   edges;
+    uint64_t               entry_point = 0;
+};
+
+// ── Binary diffing ──────────────────────────
+
+enum class DiffKind : uint8_t {
+    Identical,
+    Modified,
+    Added,
+    Removed,
+};
+
+struct FunctionDiff {
+    std::string  name;
+    uint64_t     addr_old = 0;
+    uint64_t     addr_new = 0;
+    DiffKind     kind     = DiffKind::Identical;
+    float        similarity = 1.0f;  // 0.0–1.0 for Modified
+};
+
+struct BinaryDiffResult {
+    std::vector<FunctionDiff> functions;
+    size_t                    total_old   = 0;
+    size_t                    total_new   = 0;
+    size_t                    matched     = 0;
+    size_t                    modified    = 0;
+    size_t                    added       = 0;
+    size_t                    removed     = 0;
+};
+
+// ── Pattern scanner v2 ─────────────────────
+
+struct PatternRule {
+    std::string              name;
+    std::vector<uint8_t>     pattern;
+    std::vector<uint8_t>     mask;       // 0xFF = exact, 0x00 = wildcard
+    std::vector<std::string> tags;
+};
+
+struct PatternMatch {
+    uint64_t     address    = 0;
+    std::string  rule_name;
+    size_t       length     = 0;
+};
+
+// ── String scanner ──────────────────────────
+
+enum class StringEncoding : uint8_t {
+    Ascii,
+    Utf8,
+    Utf16LE,
+    Utf16BE,
+};
+
+struct ExtractedString {
+    uint64_t        address  = 0;
+    std::string     value;
+    StringEncoding  encoding = StringEncoding::Ascii;
+    size_t          byte_len = 0;
+    std::string     section;
+};
+
+// ── Type reconstruction (RTTI) ──────────────
+
+struct RttiClassInfo {
+    std::string              name;
+    uint64_t                 vtable_addr  = 0;
+    uint64_t                 rtti_addr    = 0;
+    std::vector<std::string> base_classes;
+    size_t                   vtable_slots = 0;
+};
+
+// ── Function boundary detection ─────────────
+
+struct FunctionBoundary {
+    uint64_t    start     = 0;
+    uint64_t    end       = 0;
+    std::string name;          // symbol name if available
+    bool        has_symbol = false;
+    float       confidence = 1.0f;   // 0.0–1.0 heuristic confidence
+};
+
+// ── Analysis options ────────────────────────
+
+struct CfgBuildOptions {
+    size_t   max_instructions = 100000;
+    bool     follow_calls     = false;
+    std::string tag;
+};
+
+struct BinaryDiffOptions {
+    float    similarity_threshold = 0.5f;  // below this, treat as added/removed
+    bool     instruction_level    = false;  // diff individual instructions
+    std::string tag;
+};
+
+struct PatternScanOptions {
+    size_t   max_matches    = 0;     // 0 = unlimited
+    uint64_t scan_start     = 0;     // 0 = module base
+    uint64_t scan_end       = 0;     // 0 = module end
+    std::string tag;
+};
+
+struct StringScanOptions {
+    size_t   min_length   = 4;
+    size_t   max_length   = 4096;
+    bool     include_utf16 = true;
+    std::string tag;
+};
+
+struct FunctionDetectOptions {
+    size_t   max_functions   = 0;    // 0 = unlimited
+    float    min_confidence  = 0.5f;
+    std::string tag;
+};
+
+// ─────────────────────────────────────────────
+//  Phase 26 — Network Layer v2 types
+// ─────────────────────────────────────────────
+
+struct PacketTimingConfig {
+    double   jitter_ms_min  = 0.0;   // minimum added delay
+    double   jitter_ms_max  = 5.0;   // maximum added delay
+    bool     enabled        = true;
+    std::string tag;
+};
+
+struct DnsFingerprint {
+    std::string  domain;
+    std::string  record_type;   // A, AAAA, CNAME, TXT
+    uint64_t     ttl       = 0;
+    bool         is_canary = false;
+    std::string  response;
+};
+
+struct TlsFingerprint {
+    std::string  ja3_hash;
+    std::string  ja4_hash;
+    std::string  server_name;   // SNI
+    uint16_t     tls_version = 0;
+    std::vector<uint16_t> cipher_suites;
+};
+
+enum class ReplayMode : uint8_t {
+    Realtime,       // replay at original timing
+    FastForward,    // replay as fast as possible
+    StepByStep,     // replay one packet at a time
+};
+
+struct ReplayOptions {
+    ReplayMode   mode        = ReplayMode::Realtime;
+    double       speed_mult  = 1.0;    // for Realtime mode
+    std::string  filter;               // BPF filter
+    std::string  tag;
+};
+
+struct InterceptRule {
+    std::string  filter;               // BPF/WinDivert filter expression
+    bool         drop       = false;   // drop matching packets
+    bool         modify     = false;   // allow modification callback
+    std::string  tag;
+};
+
+struct CertPinInfo {
+    std::string  hostname;
+    std::vector<std::string> pin_hashes;  // SPKI SHA-256 pins
+    bool         enforced   = false;
+    std::string  source;     // "header" (HPKP), "embedded", "dynamic"
+};
+
+struct WinsockHookConfig {
+    bool     hook_send      = true;
+    bool     hook_recv      = true;
+    bool     hook_connect   = true;
+    bool     hook_accept    = true;
+    bool     hook_dns       = true;    // gethostbyname / getaddrinfo
+    std::string tag;
+};
+
+// ─────────────────────────────────────────────
+//  Phase 27 — VanTrace v2 types
+// ─────────────────────────────────────────────
+
+enum class TraceFormat : uint8_t {
+    Json,           // human-readable JSON lines
+    Binary,         // compact binary format
+    Collapsed,      // collapsed-stack for flame graphs
+};
+
+struct TraceConfig {
+    TraceFormat format         = TraceFormat::Json;
+    bool        include_stacks = true;
+    bool        include_args   = false;   // log hook arguments
+    size_t      buffer_size    = 1 << 20; // ring buffer bytes (1 MB)
+    std::string output_path;              // file path or empty for in-memory
+    std::string tag;
+};
+
+struct TraceFilter {
+    std::vector<std::string> include_modules;   // module name allowlist
+    std::vector<std::string> exclude_modules;   // module name blocklist
+    std::vector<uint64_t>    include_addresses; // specific function addresses
+    uint32_t                 max_depth     = 0; // 0 = unlimited call depth
+    std::string              tag;
+};
+
+struct TraceRemoteConfig {
+    std::string  address       = "127.0.0.1"; // bind address
+    uint16_t     port          = 47700;        // TCP port (0 = named pipe)
+    std::string  pipe_name;                    // Windows named pipe name
+    bool         auto_start    = true;
+    std::string  tag;
+};
+
+struct TraceEtwConfig {
+    std::string  provider_name = "VanHooks-Trace";
+    uint8_t      level         = 4;   // 1=critical … 5=verbose
+    uint64_t     keyword_mask  = 0;   // ETW keyword filter
+    std::string  tag;
+};
+
+struct FlameGraphEntry {
+    std::string  stack;        // semicolon-delimited collapsed stack
+    uint64_t     duration_ns;  // inclusive duration
+};
+
+enum class IdaExportFormat : uint8_t {
+    IdaPython,     // .py script for IDA Pro
+    GhidraJava,    // .java script for Ghidra
+};
+
+struct TraceIdaExportOptions {
+    IdaExportFormat  format       = IdaExportFormat::IdaPython;
+    bool             add_comments = true;
+    bool             add_colors   = true;
+    std::string      output_path;
+    std::string      tag;
+};
+
+// ─────────────────────────────────────────────
+//  Phase 28 — Test Suite types
+// ─────────────────────────────────────────────
+
+enum class TestVerbosity : uint8_t {
+    Quiet,          // only failures
+    Summary,        // pass/fail counts
+    Verbose,        // every test case
+};
+
+struct TestRunConfig {
+    TestVerbosity verbosity    = TestVerbosity::Summary;
+    uint32_t      timeout_ms   = 30000;  // per-test timeout
+    bool          stop_on_fail = false;
+    size_t        thread_count = 1;      // parallel test threads
+    std::string   filter;                // glob filter on test names
+    std::string   tag;
+};
+
+enum class TestResult : uint8_t {
+    Pass,
+    Fail,
+    Skip,
+    Timeout,
+};
+
+struct TestCaseResult {
+    std::string  name;
+    TestResult   result     = TestResult::Pass;
+    double       elapsed_ms = 0.0;
+    std::string  message;    // failure/skip reason
+};
+
+struct TestSuiteResult {
+    std::vector<TestCaseResult> cases;
+    size_t  total   = 0;
+    size_t  passed  = 0;
+    size_t  failed  = 0;
+    size_t  skipped = 0;
+    double  elapsed_ms = 0.0;
+};
+
+struct StressTestConfig {
+    size_t   thread_count     = 8;
+    size_t   iterations       = 10000;
+    size_t   chain_depth      = 16;    // max hook chain depth
+    uint32_t timeout_ms       = 60000;
+    std::string tag;
+};
+
+// ─────────────────────────────────────────────
+//  Phase 29 — Fuzzing Infrastructure types
+// ─────────────────────────────────────────────
+
+enum class FuzzEngine : uint8_t {
+    LibFuzzer,
+    AflPlusPlus,
+    Honggfuzz,
+};
+
+enum class FuzzTarget : uint8_t {
+    Disasm,
+    Trampoline,
+    PeParser,
+    ElfParser,
+    MachOParser,
+    Injection,
+    PatternScanner,
+    StringScanner,
+};
+
+struct FuzzConfig {
+    FuzzEngine   engine          = FuzzEngine::LibFuzzer;
+    FuzzTarget   target          = FuzzTarget::Disasm;
+    std::string  corpus_dir;                // seed corpus directory
+    std::string  output_dir;                // crash/artifact output
+    size_t       max_iterations  = 0;       // 0 = unlimited
+    size_t       max_input_size  = 4096;
+    uint32_t     timeout_ms      = 10000;   // per-input timeout
+    bool         detect_leaks    = true;
+    std::string  tag;
+};
+
+enum class SanitizerKind : uint8_t {
+    Asan,    // AddressSanitizer
+    Ubsan,   // UndefinedBehaviorSanitizer
+    Msan,    // MemorySanitizer
+    Tsan,    // ThreadSanitizer
+    Lsan,    // LeakSanitizer
+};
+
+struct FuzzCrashInfo {
+    std::string  input_hash;     // SHA-256 of crashing input
+    std::string  target_name;
+    std::string  crash_type;     // "heap-buffer-overflow", "null-deref", …
+    std::string  stack_trace;
+    size_t       input_size = 0;
+    bool         deduplicated = false;
+};
+
+struct CorpusStats {
+    size_t  total_inputs    = 0;
+    size_t  minimised_count = 0;
+    size_t  total_crashes   = 0;
+    size_t  unique_crashes  = 0;
+    double  coverage_pct    = 0.0;
+};
+
+// ─────────────────────────────────────────────
+//  Phase 30 — CI/CD Pipeline types
+// ─────────────────────────────────────────────
+
+enum class CiPlatform : uint8_t {
+    WindowsX64,
+    WindowsX86,
+    WindowsArm64,
+    LinuxX64Gcc,
+    LinuxX64Clang,
+    LinuxArm64,
+    MacOsX64,
+    MacOsArm64,
+    FuzzSmoke,
+    NetEnabled,
+};
+
+struct CiJobConfig {
+    CiPlatform   platform;
+    std::string  build_type    = "Release"; // Release, Debug, RelWithDebInfo
+    bool         net_enabled   = false;
+    bool         fuzz_smoke    = false;
+    std::string  tag;
+};
+
+struct CiJobResult {
+    CiPlatform   platform;
+    bool         success       = false;
+    double       elapsed_sec   = 0.0;
+    size_t       warnings      = 0;
+    size_t       errors        = 0;
+    std::string  log_summary;
+};
+
+struct CiSdkSyncResult {
+    bool         in_sync       = false;
+    std::vector<std::string> mismatched_headers;
+};
+
+struct CiReleaseConfig {
+    std::string  version_tag;        // e.g. "v0.2.0"
+    bool         generate_archive  = true;
+    bool         publish_release   = false;  // GitHub Release
+    std::string  tag;
+};
+
+struct CiCoverageReport {
+    double  line_pct       = 0.0;
+    double  branch_pct     = 0.0;
+    double  function_pct   = 0.0;
+    size_t  lines_covered  = 0;
+    size_t  lines_total    = 0;
+};
+
+struct CiStaticAnalysisResult {
+    size_t  issues_total    = 0;
+    size_t  issues_error    = 0;
+    size_t  issues_warning  = 0;
+    size_t  issues_note     = 0;
+    std::string tool_name;    // "clang-tidy", "cppcheck", "PVS-Studio"
+};
+
+struct CiBinarySizeEntry {
+    std::string  target_name;    // "vanhooks.lib", "vanhooks.dll"
+    CiPlatform   platform;
+    size_t       size_bytes = 0;
+};
+
+// ─────────────────────────────────────────────
+//  Phase 31 — API Documentation types
+// ─────────────────────────────────────────────
+
+enum class DocFormat : uint8_t {
+    Html,           // Doxygen HTML output
+    Markdown,       // Markdown reference
+    Json,           // Machine-readable JSON schema
+};
+
+struct DocGenerateConfig {
+    DocFormat    format          = DocFormat::Html;
+    std::string  output_dir     = "docs/api";
+    std::string  theme          = "vanhooks";   // Doxygen theme name
+    bool         include_private = false;
+    bool         include_source  = false;        // include source snippets
+    std::string  tag;
+};
+
+struct DocModuleInfo {
+    std::string  name;           // e.g. "vh::unhook"
+    std::string  category;       // e.g. "vigil", "inject", "analysis"
+    std::string  description;
+    std::vector<std::string> detects;      // what this module detects/provides
+    std::vector<std::string> engines;      // AC engines that exercise it
+    std::vector<std::string> functions;    // public API functions
+};
+
+enum class HookKindDoc : uint8_t {
+    Trampoline, Mid, CallSite, IAT, PLT, GOT, VTable,
+    HwBp, PageGuard, Nirvana, SoftBp, EAT, Syscall,
+    TLS, Exception, ThreadLocal, EPT
+};
+
+struct HookKindInfo {
+    HookKindDoc  kind;
+    std::string  name;
+    std::string  description;
+    std::string  when_to_use;
+    std::string  performance;     // "ns/call", "cache impact"
+    bool         windows   = false;
+    bool         linux_    = false;
+    bool         macos     = false;
+};
+
+struct InjectionTechniqueInfo {
+    std::string  name;
+    std::string  description;
+    uint8_t      stealth_rank = 0;  // 1 = most stealthy
+    bool         windows   = false;
+    bool         linux_    = false;
+    bool         macos     = false;
+    bool         android   = false;
+    std::string  prerequisites;
+};
+
+struct ErrorRefEntry {
+    Error        code;
+    std::string  name;
+    std::string  cause;
+    std::string  troubleshooting;
+    std::string  recovery_example;
+};
+
+// ─────────────────────────────────────────────
+//  Phase 32 — SDK Improvements types
+// ─────────────────────────────────────────────
+
+struct SdkSyncConfig {
+    std::string  source_include_dir = "include";
+    std::string  sdk_include_dir    = "../VanHooksSDK/include";
+    std::string  lib_output_dir     = "lib";
+    std::string  sdk_lib_dir        = "../VanHooksSDK/lib";
+    bool         copy_libs          = true;
+    bool         copy_headers       = true;
+    std::string  tag;
+};
+
+struct SdkSyncReport {
+    size_t  headers_copied   = 0;
+    size_t  headers_skipped  = 0;
+    size_t  libs_copied      = 0;
+    std::vector<std::string> changed_files;
+};
+
+struct SdkVersionInfo {
+    int          major;
+    int          minor;
+    int          patch;
+    std::string  full_string;        // "0.2.0"
+    bool         header_matches_lib; // runtime check result
+};
+
+struct SdkChangelogEntry {
+    std::string  version;
+    std::string  date;
+    std::vector<std::string> added;
+    std::vector<std::string> changed;
+    std::vector<std::string> removed;
+    std::vector<std::string> deprecated;
+};
+
+enum class SdkProfile : uint8_t {
+    Full,           // all modules
+    Minimal,        // core hooks only
+    Analysis,       // core + analysis
+    Stealth,        // core + vigil + stealth pack
+};
+
+struct SdkMinimalConfig {
+    SdkProfile   profile         = SdkProfile::Minimal;
+    bool         include_inject  = false;
+    bool         include_vigil   = false;
+    bool         include_analysis = false;
+    bool         include_net     = false;
+    std::string  tag;
+};
+
+enum class BindingLang : uint8_t {
+    C,
+    Python,
+    Rust,
+    CSharp,
+};
+
+struct BindingGenConfig {
+    BindingLang  language;
+    std::string  output_dir;
+    bool         generate_tests  = true;
+    std::string  tag;
+};
+
+struct BindingGenResult {
+    BindingLang  language;
+    size_t       functions_wrapped = 0;
+    size_t       types_wrapped     = 0;
+    std::vector<std::string> generated_files;
+};
+
+// ─────────────────────────────────────────────
+//  Phase 33 — Examples & Tutorials types
+// ─────────────────────────────────────────────
+
+struct ExampleInfo {
+    std::string  name;           // e.g. "quickstart"
+    std::string  title;          // e.g. "Minimal Inline Hook"
+    std::string  description;
+    std::string  category;       // "core", "stealth", "analysis", "inject", "net", "cross-platform"
+    std::string  source_path;    // relative path in examples/
+    std::vector<std::string> demonstrates;  // API features shown
+};
+
+enum class ExampleCategory : uint8_t {
+    Core,
+    Stealth,
+    Analysis,
+    Inject,
+    Net,
+    CrossPlatform,
+    GameIntegration,
+};
+
+struct ExampleBuildConfig {
+    std::string  example_name;
+    std::string  build_dir   = "build/examples";
+    bool         run_after   = false;   // run the example after building
+    std::string  tag;
+};
+
+struct ExampleBuildResult {
+    std::string  example_name;
+    bool         success      = false;
+    std::string  output_path;
+    double       build_sec    = 0.0;
+    std::string  log;
+};
+
+// ─────────────────────────────────────────────
+//  Phase 34 — Performance Pass types
+// ─────────────────────────────────────────────
+
+enum class BenchmarkTarget : uint8_t {
+    HookInstall,        // time to install a single hook
+    HookDispatch,       // per-call overhead through detour
+    HookRemove,         // time to cleanly remove a hook
+    BatchInstall,       // N hooks in one apply_queued cycle
+    TrampolineAlloc,    // single trampoline allocation
+    ArenaAlloc,         // arena-based bulk allocation
+    LockContention,     // concurrent hook lookup latency
+    CachePressure,      // hook table traversal under load
+};
+
+struct BenchmarkConfig {
+    BenchmarkTarget target;
+    size_t          iterations   = 10000;
+    size_t          warmup       = 100;
+    size_t          threads      = 1;       // for contention benchmarks
+    uint32_t        timeout_ms   = 30000;
+    std::string     tag;
+};
+
+struct BenchmarkResult {
+    BenchmarkTarget target;
+    double          min_ns       = 0.0;
+    double          max_ns       = 0.0;
+    double          avg_ns       = 0.0;
+    double          median_ns    = 0.0;
+    double          p99_ns       = 0.0;
+    size_t          iterations   = 0;
+    double          total_ms     = 0.0;
+};
+
+struct MemoryFootprint {
+    size_t  engine_bytes       = 0;   // Engine struct + impl
+    size_t  hooks_bytes        = 0;   // hook metadata table
+    size_t  trampolines_bytes  = 0;   // allocated trampoline stubs
+    size_t  vigil_bytes        = 0;   // vigil module state
+    size_t  net_bytes          = 0;   // network capture buffers
+    size_t  total_bytes        = 0;
+};
+
+struct ArenaConfig {
+    size_t  initial_size    = 1 << 16;  // 64 KB
+    size_t  max_size        = 1 << 24;  // 16 MB
+    bool    executable      = true;     // VirtualAlloc with PAGE_EXECUTE_READWRITE
+    void*   hint_address    = nullptr;  // prefer near this address
+    std::string tag;
+};
+
+struct ArenaStats {
+    size_t  allocated_bytes  = 0;
+    size_t  used_bytes       = 0;
+    size_t  free_bytes       = 0;
+    size_t  alloc_count      = 0;
+    size_t  arena_count      = 0;   // number of arena blocks
 };
 
 // ─────────────────────────────────────────────
@@ -1047,6 +2117,580 @@ public:
     [[nodiscard]] std::optional<HookDesc> describe(HookHandle handle) const;
     [[nodiscard]] std::vector<HookDesc>   list_hooks() const;
     [[nodiscard]] size_t                  hook_count() const noexcept;
+
+    // ══════════════════════════════════════════════
+    //  Phase 21 — Hook Engine v2
+    // ══════════════════════════════════════════════
+
+    // ── Conditional hook ─────────────────────────
+    // Installs a hook that fires only when opts.condition() returns true.
+    // Uses a SoftBp/VEH dispatcher that evaluates the predicate per-call.
+
+    [[nodiscard]]
+    Result<HookHandle> hook_conditional(
+        void*              target,
+        void*              detour,
+        void**             original_out = nullptr,
+        ConditionalOptions opts = {}
+    );
+
+    template<typename Fn>
+    [[nodiscard]]
+    Result<HookHandle> hook_conditional(
+        Fn*                target,
+        Fn*                detour,
+        Fn**               original_out = nullptr,
+        ConditionalOptions opts = {})
+    {
+        return hook_conditional(reinterpret_cast<void*>(target),
+                                reinterpret_cast<void*>(detour),
+                                reinterpret_cast<void**>(original_out),
+                                std::move(opts));
+    }
+
+    // ── Lazy hook ────────────────────────────────
+    // Defers trampoline installation until first call.  An INT3/SoftBp at
+    // the target captures the first hit, installs the real trampoline, removes
+    // the breakpoint, and replays the call transparently.
+
+    [[nodiscard]]
+    Result<HookHandle> hook_lazy(
+        void*        target,
+        void*        detour,
+        void**       original_out = nullptr,
+        LazyOptions  opts = {}
+    );
+
+    template<typename Fn>
+    [[nodiscard]]
+    Result<HookHandle> hook_lazy(
+        Fn*          target,
+        Fn*          detour,
+        Fn**         original_out = nullptr,
+        LazyOptions  opts = {})
+    {
+        return hook_lazy(reinterpret_cast<void*>(target),
+                         reinterpret_cast<void*>(detour),
+                         reinterpret_cast<void**>(original_out),
+                         std::move(opts));
+    }
+
+    // ── Function-exit hook ──────────────────────
+    // Patches every RET/RETN site in the target function body (found via
+    // control-flow analysis) so the callback fires on every return path.
+
+    [[nodiscard]]
+    Result<HookHandle> hook_exit(
+        void*            target,
+        ReturnCallback   callback,
+        ExitHookOptions  opts = {}
+    );
+
+    // ── Atomic detour swap ──────────────────────
+    // Replaces a hook's detour function in-place without a remove+add gap.
+    // Supported for Trampoline, CallSite, and ThreadLocal hook kinds.
+    // The old detour address is written to *old_detour_out if non-null.
+
+    [[nodiscard]]
+    Status swap_detour(HookHandle handle,
+                       void*      new_detour,
+                       void**     old_detour_out = nullptr);
+
+    // ── Hook priority ───────────────────────────
+    // Sets the numeric priority for ordering multiple hooks on the same
+    // target.  Higher priority hooks fire first in the chain.
+
+    [[nodiscard]]
+    Status set_priority(HookHandle handle, int32_t priority);
+
+    // ── Per-hook statistics ──────────────────────
+    // Returns a snapshot of the hook's call statistics.
+    // Statistics are only collected when the hook was installed with stats=true
+    // or when stats were explicitly enabled via enable_stats().
+
+    [[nodiscard]]
+    std::optional<HookStatsSnapshot> stats(HookHandle handle) const;
+
+    [[nodiscard]] Status enable_stats(HookHandle handle);
+    [[nodiscard]] Status disable_stats(HookHandle handle);
+    [[nodiscard]] Status reset_stats(HookHandle handle);
+
+    // ── Thread-targeted hooks (expanded) ────────
+    // Enable/disable a thread-local hook for a set of thread IDs at once.
+    // Complements the single-thread thread_local_enable/disable().
+
+    void thread_local_enable_set (HookHandle handle, std::span<const uint32_t> thread_ids);
+    void thread_local_disable_set(HookHandle handle, std::span<const uint32_t> thread_ids);
+    void thread_local_disable_all(HookHandle handle) noexcept;
+
+    // ── Detour type safety ──────────────────────
+    // Compile-time signature match: prevents silent calling-convention mismatch.
+    //
+    //   auto h = engine.hook_typed<int(WINAPI*)(HWND, LPCSTR, LPCSTR, UINT)>(
+    //       MessageBoxA, MyMessageBoxA, &g_origMessageBoxA);
+
+    template<typename Sig>
+    [[nodiscard]]
+    Result<HookHandle> hook_typed(Sig target, Sig detour, Sig* original_out = nullptr,
+                                  TrampolineOptions opts = {})
+    {
+        static_assert(std::is_pointer_v<Sig> && std::is_function_v<std::remove_pointer_t<Sig>>,
+                      "vh::hook_typed<Sig>: Sig must be a function pointer type");
+        return hook_trampoline(reinterpret_cast<void*>(target),
+                               reinterpret_cast<void*>(detour),
+                               reinterpret_cast<void**>(original_out),
+                               std::move(opts));
+    }
+
+    // ══════════════════════════════════════════════
+    //  Phase 22 — Cross-Platform Hook Parity
+    // ══════════════════════════════════════════════
+
+    // ── macOS dyld interpose ─────────────────────
+    // Registers a DYLD_INSERT_LIBRARIES interposition.
+    // macOS only; returns Error::Unsupported on other platforms.
+
+    [[nodiscard]]
+    Result<HookHandle> hook_dyld_interpose(void* detour, DyldInterposeOptions opts);
+
+    // ── macOS Mach-O import hook ─────────────────
+    // Patches lazy/non-lazy symbol pointers in __DATA segments.
+    // macOS only; returns Error::Unsupported on other platforms.
+
+    [[nodiscard]]
+    Result<HookHandle> hook_macho_import(void* detour, MachOImportOptions opts);
+
+    // ── Hardware breakpoint hooks (Linux) ────────
+    // Uses ptrace(POKEUSR) to set debug registers DR0-DR3.
+    // Linux only; returns Error::Unsupported on other platforms.
+
+    [[nodiscard]]
+    Result<HookHandle> hook_hwbp_linux(
+        void*        target,
+        MidCallback  callback,
+        HwBpOptions  opts = {}
+    );
+
+    // ── Hardware breakpoint hooks (macOS) ────────
+    // Uses thread_set_state() on x86_DEBUG_STATE64.
+    // macOS only; returns Error::Unsupported on other platforms.
+
+    [[nodiscard]]
+    Result<HookHandle> hook_hwbp_macos(
+        void*        target,
+        MidCallback  callback,
+        HwBpOptions  opts = {}
+    );
+
+    // ══════════════════════════════════════════════
+    //  Phase 23 — Injection Engine v2
+    // ══════════════════════════════════════════════
+
+    // ── Injection stealth recommendation ─────────
+    // Surveys the target process against known AC signatures and returns
+    // a ranked list of injection methods ordered by stealth score.
+
+    [[nodiscard]]
+    std::vector<InjectRecommendResult> inject_recommend(
+        uint32_t pid,
+        InjectPlatform platform = InjectPlatform::Auto
+    );
+
+    // ── Shellcode generator ──────────────────────
+    // Generates position-independent shellcode from a raw code buffer,
+    // applying arch-specific PIC transforms (RIP-relative → absolute, etc.).
+
+    [[nodiscard]]
+    Result<std::vector<uint8_t>> shellcode_generate(
+        std::span<const uint8_t> code,
+        ShellcodeGenOptions      opts = {}
+    );
+
+    // ══════════════════════════════════════════════
+    //  Phase 24 — Advanced Hook Techniques
+    // ══════════════════════════════════════════════
+
+    // ── Inline hook relay ────────────────────────
+    // Shared trampoline pool with direct jmp relay — saves one indirection
+    // per call.  The relay pool is pre-allocated near the target.
+
+    [[nodiscard]]
+    Result<HookHandle> hook_relay(
+        void*          target,
+        void*          detour,
+        void**         original_out = nullptr,
+        RelayOptions   opts = {}
+    );
+
+    // ── Copy-on-write hook ──────────────────────
+    // Creates a private CoW mapping of the target's .text page so the
+    // hook patch is invisible to same-process integrity scans.
+
+    [[nodiscard]]
+    Result<HookHandle> hook_cow(
+        void*           target,
+        void*           detour,
+        void**          original_out = nullptr,
+        CowHookOptions  opts = {}
+    );
+
+    // ── Signal-based hook (Linux) ────────────────
+    // SIGTRAP/SIGILL handler dispatch for breakpoint-free hooking.
+    // Linux only; returns Error::Unsupported on other platforms.
+
+    [[nodiscard]]
+    Result<HookHandle> hook_signal(
+        void*              target,
+        MidCallback        callback,
+        SignalHookOptions  opts = {}
+    );
+
+    // ── Exception-port hook (macOS) ──────────────
+    // Mach exception port interception for breakpoint-free hooking.
+    // macOS only; returns Error::Unsupported on other platforms.
+
+    [[nodiscard]]
+    Result<HookHandle> hook_exception_port(
+        void*                target,
+        MidCallback          callback,
+        ExceptionPortOptions opts = {}
+    );
+
+    // ── JIT hook support ────────────────────────
+    // Hooks dynamically generated code (V8, LuaJIT, .NET JIT) with
+    // JIT code-cache monitoring and automatic re-patch on recompile.
+
+    [[nodiscard]]
+    Result<HookHandle> hook_jit(
+        void*           target,
+        void*           detour,
+        void**          original_out = nullptr,
+        JitHookOptions  opts = {}
+    );
+
+    // ── Phase 25 — Analysis Subsystem v2 ────────
+
+    // ELF parser: parse an in-memory ELF image.
+    // Returns sections, symbols, dynamic entries, and relocations.
+    [[nodiscard]]
+    Result<std::vector<ElfSection>> elf_sections(
+        std::span<const uint8_t> elf_image);
+
+    [[nodiscard]]
+    Result<std::vector<ElfSymbol>> elf_symbols(
+        std::span<const uint8_t> elf_image);
+
+    [[nodiscard]]
+    Result<std::vector<ElfDynEntry>> elf_dynamic(
+        std::span<const uint8_t> elf_image);
+
+    [[nodiscard]]
+    Result<std::vector<ElfRelocation>> elf_relocations(
+        std::span<const uint8_t> elf_image);
+
+    // Mach-O parser: parse an in-memory Mach-O image.
+    // Handles fat (universal) binaries via fat_slices().
+    [[nodiscard]]
+    Result<std::vector<MachOFatSlice>> macho_fat_slices(
+        std::span<const uint8_t> macho_image);
+
+    [[nodiscard]]
+    Result<std::vector<MachOSection>> macho_sections(
+        std::span<const uint8_t> macho_image);
+
+    [[nodiscard]]
+    Result<std::vector<MachOSymbol>> macho_symbols(
+        std::span<const uint8_t> macho_image);
+
+    [[nodiscard]]
+    Result<std::vector<MachOLoadCommand>> macho_load_commands(
+        std::span<const uint8_t> macho_image);
+
+    // Control flow graph: build a CFG from a function's address.
+    [[nodiscard]]
+    Result<ControlFlowGraph> build_cfg(
+        void* function_start,
+        CfgBuildOptions opts = {});
+
+    // Binary diffing: compare two module images function by function.
+    [[nodiscard]]
+    Result<BinaryDiffResult> binary_diff(
+        std::span<const uint8_t> old_image,
+        std::span<const uint8_t> new_image,
+        BinaryDiffOptions opts = {});
+
+    // Pattern scanner v2: compile and scan with wildcard rules.
+    [[nodiscard]]
+    Result<std::vector<PatternMatch>> pattern_scan(
+        void* base, size_t size,
+        std::span<const PatternRule> rules,
+        PatternScanOptions opts = {});
+
+    // String scanner: extract readable strings from a memory region.
+    [[nodiscard]]
+    Result<std::vector<ExtractedString>> string_scan(
+        void* base, size_t size,
+        StringScanOptions opts = {});
+
+    // Type reconstruction: recover RTTI class info from a module.
+    [[nodiscard]]
+    Result<std::vector<RttiClassInfo>> rtti_scan(
+        void* module_base);
+
+    // Function boundary detection: heuristic function start/end.
+    [[nodiscard]]
+    Result<std::vector<FunctionBoundary>> detect_functions(
+        void* base, size_t size,
+        FunctionDetectOptions opts = {});
+
+    // ── Phase 26 — Network Layer v2 ─────────────
+
+    // Packet timing normalisation: add jitter to outgoing responses.
+    [[nodiscard]]
+    Result<void> net_set_packet_timing(PacketTimingConfig config);
+
+    // DNS fingerprint awareness: scan for AC canary domains.
+    [[nodiscard]]
+    Result<std::vector<DnsFingerprint>> net_dns_fingerprint(
+        std::string_view interface_name,
+        uint32_t timeout_ms = 5000);
+
+    // TLS fingerprint: capture JA3/JA4 fingerprints from traffic.
+    [[nodiscard]]
+    Result<std::vector<TlsFingerprint>> net_tls_fingerprint(
+        std::string_view interface_name,
+        uint32_t timeout_ms = 5000);
+
+    // Traffic replay: replay a pcapng file on the network.
+    [[nodiscard]]
+    Result<void> net_replay(
+        std::string_view pcapng_path,
+        ReplayOptions opts = {});
+
+    // Network interception: register inline packet modification rules.
+    [[nodiscard]]
+    Result<uint64_t> net_intercept_add(InterceptRule rule);
+
+    [[nodiscard]]
+    Result<void> net_intercept_remove(uint64_t rule_id);
+
+    // Certificate pinning awareness: detect and map cert pins.
+    [[nodiscard]]
+    Result<std::vector<CertPinInfo>> net_cert_pin_scan(
+        std::string_view hostname);
+
+    // Winsock hook layer: install hooks on WSA* functions.
+    // Windows only; returns Error::Unsupported on POSIX.
+    [[nodiscard]]
+    Result<void> net_winsock_hook(WinsockHookConfig config = {});
+
+    [[nodiscard]]
+    Result<void> net_winsock_unhook();
+
+    // ── Phase 27 — VanTrace v2 ──────────────────
+
+    // Initialise or reconfigure the trace subsystem.
+    [[nodiscard]]
+    Result<void> trace_init(TraceConfig config = {});
+
+    // Shut down trace and flush buffers.
+    [[nodiscard]]
+    Result<void> trace_shutdown();
+
+    // Apply a filter to the active trace session.
+    [[nodiscard]]
+    Result<void> trace_set_filter(TraceFilter filter);
+
+    // Start a remote trace viewer server (named pipe or TCP).
+    [[nodiscard]]
+    Result<void> trace_remote_start(TraceRemoteConfig config = {});
+
+    // Stop the remote trace viewer server.
+    [[nodiscard]]
+    Result<void> trace_remote_stop();
+
+    // Register an ETW provider for Windows Performance Analyzer.
+    // Windows only; returns Error::Unsupported on POSIX.
+    [[nodiscard]]
+    Result<void> trace_etw_register(TraceEtwConfig config = {});
+
+    // Unregister the ETW provider.
+    [[nodiscard]]
+    Result<void> trace_etw_unregister();
+
+    // Export collected trace data as a collapsed-stack flame graph file.
+    [[nodiscard]]
+    Result<std::vector<FlameGraphEntry>> trace_flame_export(
+        std::string_view output_path);
+
+    // Export trace data as an IDA Pro or Ghidra annotation script.
+    [[nodiscard]]
+    Result<void> trace_ida_export(TraceIdaExportOptions opts);
+
+    // ── Phase 28 — Test Suite ───────────────────
+
+    // Run the built-in self-test suite.
+    [[nodiscard]]
+    Result<TestSuiteResult> test_run(TestRunConfig config = {});
+
+    // Run the concurrent stress test (hook/unhook from N threads).
+    [[nodiscard]]
+    Result<TestSuiteResult> test_stress(StressTestConfig config = {});
+
+    // Run a single named test case and return its result.
+    [[nodiscard]]
+    Result<TestCaseResult> test_run_one(std::string_view test_name,
+                                        uint32_t timeout_ms = 30000);
+
+    // List all available test names.
+    [[nodiscard]]
+    Result<std::vector<std::string>> test_list();
+
+    // ── Phase 29 — Fuzzing Infrastructure ───────
+
+    // Start a fuzz session on the given target.
+    [[nodiscard]]
+    Result<void> fuzz_start(FuzzConfig config);
+
+    // Stop the current fuzz session and return crash info.
+    [[nodiscard]]
+    Result<std::vector<FuzzCrashInfo>> fuzz_stop();
+
+    // Get corpus statistics for the active/last fuzz session.
+    [[nodiscard]]
+    Result<CorpusStats> fuzz_corpus_stats();
+
+    // Minimise the seed corpus, removing redundant inputs.
+    [[nodiscard]]
+    Result<CorpusStats> fuzz_corpus_minimise(std::string_view corpus_dir);
+
+    // Check whether a sanitizer is available at runtime.
+    [[nodiscard]]
+    Result<bool> fuzz_sanitizer_available(SanitizerKind kind);
+
+    // List available fuzz targets.
+    [[nodiscard]]
+    Result<std::vector<std::string>> fuzz_list_targets();
+
+    // ── Phase 30 — CI/CD Pipeline ───────────────
+
+    // Validate a CI workflow configuration.
+    [[nodiscard]]
+    Result<void> ci_validate_workflow(std::string_view workflow_path);
+
+    // Run a single CI job configuration locally.
+    [[nodiscard]]
+    Result<CiJobResult> ci_run_job(CiJobConfig config);
+
+    // Check SDK header sync: compare source headers against SDK copy.
+    [[nodiscard]]
+    Result<CiSdkSyncResult> ci_check_sdk_sync();
+
+    // Generate a release archive from the current build.
+    [[nodiscard]]
+    Result<void> ci_release_build(CiReleaseConfig config);
+
+    // Run code coverage and return a summary report.
+    [[nodiscard]]
+    Result<CiCoverageReport> ci_coverage_report();
+
+    // Run static analysis and return results.
+    [[nodiscard]]
+    Result<CiStaticAnalysisResult> ci_static_analysis(
+        std::string_view tool_name = "clang-tidy");
+
+    // Measure binary sizes for the current build.
+    [[nodiscard]]
+    Result<std::vector<CiBinarySizeEntry>> ci_binary_sizes();
+
+    // ── Phase 31 — API Documentation ────────────
+
+    // Generate API documentation from header doc-comments.
+    [[nodiscard]]
+    Result<void> doc_generate(DocGenerateConfig config = {});
+
+    // Get documentation info for a specific module.
+    [[nodiscard]]
+    Result<DocModuleInfo> doc_module_info(std::string_view module_name);
+
+    // List all documented modules with their categories.
+    [[nodiscard]]
+    Result<std::vector<DocModuleInfo>> doc_list_modules();
+
+    // Get hook kind documentation: when to use, platforms, performance.
+    [[nodiscard]]
+    Result<std::vector<HookKindInfo>> doc_hook_kinds();
+
+    // Get injection technique documentation: stealth ranking, platforms.
+    [[nodiscard]]
+    Result<std::vector<InjectionTechniqueInfo>> doc_injection_techniques();
+
+    // Get error reference: causes, troubleshooting, recovery examples.
+    [[nodiscard]]
+    Result<std::vector<ErrorRefEntry>> doc_error_reference();
+
+    // ── Phase 32 — SDK Improvements ─────────────
+
+    // Sync public headers and libs from source to SDK directory.
+    [[nodiscard]]
+    Result<SdkSyncReport> sdk_sync(SdkSyncConfig config = {});
+
+    // Get SDK version info and check header/lib match.
+    [[nodiscard]]
+    Result<SdkVersionInfo> sdk_version();
+
+    // Get SDK changelog entries.
+    [[nodiscard]]
+    Result<std::vector<SdkChangelogEntry>> sdk_changelog();
+
+    // Build a minimal SDK with only the selected modules.
+    [[nodiscard]]
+    Result<void> sdk_build_minimal(SdkMinimalConfig config = {});
+
+    // Generate language bindings (C, Python, Rust, C#).
+    [[nodiscard]]
+    Result<BindingGenResult> sdk_generate_bindings(BindingGenConfig config);
+
+    // ── Phase 33 — Examples & Tutorials ─────────
+
+    // List all available examples with metadata.
+    [[nodiscard]]
+    Result<std::vector<ExampleInfo>> example_list();
+
+    // Get info for a specific example by name.
+    [[nodiscard]]
+    Result<ExampleInfo> example_get(std::string_view name);
+
+    // Build (and optionally run) an example.
+    [[nodiscard]]
+    Result<ExampleBuildResult> example_build(ExampleBuildConfig config);
+
+    // ── Phase 34 — Performance Pass ─────────────
+
+    // Run a specific micro-benchmark.
+    [[nodiscard]]
+    Result<BenchmarkResult> perf_benchmark(BenchmarkConfig config);
+
+    // Get the current memory footprint of the engine and all modules.
+    [[nodiscard]]
+    Result<MemoryFootprint> perf_memory_footprint();
+
+    // Initialise the trampoline arena allocator.
+    [[nodiscard]]
+    Result<void> perf_arena_init(ArenaConfig config = {});
+
+    // Get arena allocator statistics.
+    [[nodiscard]]
+    Result<ArenaStats> perf_arena_stats();
+
+    // Destroy the arena allocator and free all arena blocks.
+    [[nodiscard]]
+    Result<void> perf_arena_destroy();
+
+    // Run all benchmarks and return a summary vector.
+    [[nodiscard]]
+    Result<std::vector<BenchmarkResult>> perf_benchmark_all(
+        size_t iterations = 10000, uint32_t timeout_ms = 60000);
 
 private:
     struct Impl;

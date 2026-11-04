@@ -51,9 +51,10 @@ VanHooks is distributed as **precompiled static libraries with public API header
 
 [Hook Types](#-hook-types) · [Hook Lifetime](#-hook-lifetime-and-raii) · [Groups](#-groups--batch-lifecycle-management) · [Hook Chaining](#-hook-chaining)
 
-[Process Injection](#-process-injection) · [Error Handling](#-error-handling) · [HookRegistry](#-multi-module-projects--hookregistry) · [Platform Support](#-platform-support)
+[Examples & Tutorials](#-examples--tutorials) · [Performance Pass](#-performance-pass) · [Process Injection](#-process-injection) · [Error Handling](#-error-handling) · [HookRegistry](#-multi-module-projects--hookregistry) · [Platform Support](#-platform-support)
 
 [Stealth & Hardening](#-stealth--hardening) · [Shared Library](#-shared-library-abi) · [Package Layout](#-package-layout)
+
 </div>
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
@@ -87,7 +88,7 @@ VanHooks is distributed as **precompiled static libraries with public API header
 | **Clang** | 17+ |
 | **CMake** | 3.25+ — optional; drop-in use needs no build system |
 | **Windows target** | Windows 10 1903 / Windows Server 2019 |
-| **Runtime dependencies** | None — Zydis is compiled into the library |
+| **Runtime dependencies** | None — Halo is compiled into the library |
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
 
@@ -336,9 +337,448 @@ base.remove();
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
 
+## ⚡ Hook Engine v2
+
+Phase 21 introduces advanced hook primitives that build on the existing hook types.
+
+### Conditional hooks
+
+A hook that fires only when a predicate returns true — zero-overhead skip when false.
+
+```cpp
+bool should_hook(void* target, void* user_data) noexcept {
+    return game_state == GameState::InMatch;
+}
+
+auto h = engine.hook_conditional(&target, &detour, &orig,
+    { .condition = should_hook, .priority = 10, .stats = true, .tag = "Conditional" });
+```
+
+### Atomic detour swap
+
+Replace a hook's detour function in-place without a remove+add gap.
+
+```cpp
+auto h = vh::inline_hook(&fn, &detourV1, &orig).value();
+// Later — hot-swap to a new detour, no window of exposure:
+void* old = nullptr;
+h.swap_detour(&detourV2, &old);
+```
+
+### Hook statistics
+
+Per-hook call counter, cumulative/average/max call duration, and last-call timestamp — all lock-free atomics.
+
+```cpp
+h.enable_stats();
+// ... some calls happen ...
+if (auto s = h.stats()) {
+    printf("calls: %llu  avg: %llu ns  max: %llu ns\n",
+           s->call_count, s->average_duration_ns, s->max_duration_ns);
+}
+```
+
+### Type-safe hooks
+
+Compile-time signature matching prevents silent calling-convention mismatches.
+
+```cpp
+auto h = engine.hook_typed<int(WINAPI*)(HWND, LPCSTR, LPCSTR, UINT)>(
+    MessageBoxA, MyMessageBoxA, &g_origMessageBoxA);
+```
+
+### Lazy hooks, function-exit hooks, hook priority
+
+```cpp
+// Lazy — trampoline installed on first call, not at hook time
+auto h = engine.hook_lazy(&target, &detour, &orig, { .tag = "JIT" });
+
+// Exit — fires on every ret/retn in the function body
+auto h = engine.hook_exit(&target, my_return_cb, { .max_scan_bytes = 8192 });
+
+// Priority — higher fires first when multiple hooks target the same function
+engine.set_priority(h, 100);
+```
+
+## 🌍 Cross-Platform Hook Parity
+
+Phase 22 extends hook coverage to macOS and Linux-specific mechanisms.
+
+| Hook | Platform | API |
+|---|---|---|
+| **dyld interpose** | macOS | `engine.hook_dyld_interpose(detour, { .original_symbol = "malloc" })` |
+| **Mach-O import** | macOS | `engine.hook_macho_import(detour, { .library_name = "libSystem", .symbol_name = "open" })` |
+| **HwBp (Linux)** | Linux | `engine.hook_hwbp_linux(target, callback)` |
+| **HwBp (macOS)** | macOS | `engine.hook_hwbp_macos(target, callback)` |
+
+ARM64 veneer stubs, RISC-V, and FreeBSD API surfaces are defined and return `Error::Unsupported` / `Error::RiscVUnsupported` until platform-specific backends are added.
+
+## 💉 Injection Engine v2
+
+Phase 23 expands the injection catalogue from 24 to 33 techniques and adds cross-platform coverage.
+
+### Platform Injection Catalogue
+
+| Platform | Techniques | API |
+|---|---|---|
+| **Linux** | ptrace, process_vm_writev, LD_PRELOAD, /proc/mem | `inject_ex::inject_ptrace()`, `inject_process_vm_writev()`, `inject_ld_preload()`, `inject_proc_mem()` |
+| **macOS** | task_for_pid + mach_vm_write, DYLD_INSERT_LIBRARIES | `inject_ex::inject_task_for_pid()`, `inject_dyld_insert()` |
+| **Android** | ptrace + linker namespace dlopen | `inject_ex::inject_android_ptrace()` |
+| **Windows** | Reflective DLL v2, Manual Map v2 | `inject_ex::inject_reflective_v2()`, `inject_manual_map_v2()` |
+
+### Injection Recommend & Shellcode Gen
+
+```cpp
+// Survey a target and get ranked techniques
+auto ranked = engine.inject_recommend(pid);
+for (auto& r : ranked)
+    printf("%s — stealth %d, reliability %d\n",
+           r.technique_name.c_str(), r.stealth_score, r.reliability_score);
+
+// Generate null-free PIC shellcode from a code buffer
+auto sc = engine.shellcode_generate(code_bytes,
+    { .arch = vanhooks::ShellcodeArch::X64, .null_free = true });
+```
+
+## ⚡ Advanced Hook Techniques
+
+Phase 24 introduces five new hook primitives for specialised use cases.
+
+| Hook | Platform | Use Case |
+|---|---|---|
+| **Relay** | All | Shared trampoline pool — saves one indirection per call on hot hooks |
+| **Copy-on-write** | Windows, Linux | CoW page split — hook invisible to integrity scans |
+| **Signal** | Linux | SIGTRAP/SIGILL handler dispatch — VEH equivalent |
+| **Exception port** | macOS | Mach exception port interception — breakpoint-free |
+| **JIT** | All | Hook JIT'd code with auto-repatch on recompile |
+
+```cpp
+// Relay hook — shared trampoline pool
+auto h = engine.hook_relay(target, detour, &original,
+    { .pool_size = 128, .tag = "hot-path" });
+
+// JIT hook — monitors for recompilation
+auto h = engine.hook_jit(jit_code, detour, &original,
+    { .auto_repatch = true, .monitor_interval_ms = 50 });
+```
+
+## 🔬 Analysis Subsystem v2
+
+Phase 25 adds a full binary analysis toolkit: ELF/Mach-O parsers, control flow graphs, binary diffing, pattern scanning, string extraction, RTTI recovery, and function boundary detection.
+
+| Capability | Types | API |
+|---|---|---|
+| **ELF parser** | `ElfSection`, `ElfSymbol`, `ElfDynEntry`, `ElfRelocation` | `elf_sections()`, `elf_symbols()`, `elf_dynamic()`, `elf_relocations()` |
+| **Mach-O parser** | `MachOFatSlice`, `MachOSection`, `MachOSymbol`, `MachOLoadCommand` | `macho_fat_slices()`, `macho_sections()`, `macho_load_commands()` |
+| **Control flow graph** | `BasicBlock`, `CfgEdge`, `ControlFlowGraph` | `build_cfg()` |
+| **Binary diffing** | `FunctionDiff`, `BinaryDiffResult` | `binary_diff()` |
+| **Pattern scanner v2** | `PatternRule`, `PatternMatch` | `pattern_scan()` |
+| **String scanner** | `ExtractedString`, `StringEncoding` | `string_scan()` |
+| **RTTI recovery** | `RttiClassInfo` | `rtti_scan()` |
+| **Function detection** | `FunctionBoundary` | `detect_functions()` |
+
+```cpp
+// Parse an ELF binary
+auto sections = engine.elf_sections(elf_bytes);
+auto symbols  = engine.elf_symbols(elf_bytes);
+
+// Build a control flow graph
+auto cfg = engine.build_cfg(function_ptr, { .max_instructions = 50000 });
+
+// Scan memory for patterns with wildcards
+PatternRule rule{ .name = "sig", .pattern = {0x48, 0x89, 0x5C},
+                  .mask = {0xFF, 0xFF, 0xFF} };
+auto matches = engine.pattern_scan(base, size, std::span(&rule, 1));
+
+// Recover RTTI class hierarchy
+auto classes = engine.rtti_scan(GetModuleHandle(nullptr));
+```
+
+## 🌐 Network Layer v2
+
+Phase 26 adds active network manipulation and deep inspection to the existing passive capture stack.
+
+| Capability | API |
+|---|---|
+| **Packet timing** — jitter to mask hook latency | `net_set_packet_timing()` |
+| **DNS fingerprint** — detect AC canary domains | `net_dns_fingerprint()` |
+| **TLS fingerprint** — JA3/JA4 client-hello hashes | `net_tls_fingerprint()` |
+| **Traffic replay** — pcapng replay at original timing | `net_replay()` |
+| **Packet interception** — WinDivert/nfqueue inline modification | `net_intercept_add()`, `net_intercept_remove()` |
+| **Cert pin detection** — HPKP, embedded, dynamic pins | `net_cert_pin_scan()` |
+| **Winsock hooks** — WSASend/Recv/connect/accept/DNS | `net_winsock_hook()`, `net_winsock_unhook()` |
+
+```cpp
+// Add jitter to mask hook latency
+engine.net_set_packet_timing({ .jitter_ms_min = 1.0, .jitter_ms_max = 8.0 });
+
+// Capture TLS fingerprints
+auto fps = engine.net_tls_fingerprint("eth0", 10000);
+for (auto& fp : *fps)
+    printf("JA3: %s  SNI: %s\n", fp.ja3_hash.c_str(), fp.server_name.c_str());
+
+// Hook all Winsock functions for traffic inspection
+engine.net_winsock_hook({ .hook_send = true, .hook_recv = true, .hook_dns = true });
+```
+
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
+
+## 📡 VanTrace v2
+
+Phase 27 adds structured tracing with JSON/binary/collapsed-stack output, filtering, remote streaming, ETW integration, flame graph export, and IDA/Ghidra annotation export.
+
+| Capability | API |
+|---|---|
+| **Structured trace** — JSON, binary, or collapsed-stack ring buffer | `trace_init()`, `trace_shutdown()` |
+| **Trace filtering** — module/address/depth filters | `trace_set_filter()` |
+| **Remote viewer** — TCP or named-pipe live streaming | `trace_remote_start()`, `trace_remote_stop()` |
+| **ETW provider** — emit events for Windows Performance Analyzer | `trace_etw_register()`, `trace_etw_unregister()` |
+| **Flame graph** — collapsed-stack export for visualisation | `trace_flame_export()` |
+| **IDA/Ghidra export** — annotation scripts from runtime data | `trace_ida_export()` |
+
+```cpp
+// Start structured JSON tracing
+engine.trace_init({ .format = vanhooks::TraceFormat::Json, .include_stacks = true });
+
+// Filter to one module
+engine.trace_set_filter({ .include_modules = {"game.dll"}, .max_depth = 8 });
+
+// Export flame graph
+auto flames = engine.trace_flame_export("trace_out.txt");
+for (auto& f : *flames)
+    printf("%s  %llu ns\n", f.stack.c_str(), f.duration_ns);
+
+// Export IDA annotation script
+engine.trace_ida_export({
+    .format = vanhooks::IdaExportFormat::IdaPython,
+    .output_path = "annotate.py"
+});
+```
+
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
+
+## 🧪 Test Suite
+
+Phase 28 adds a built-in self-test framework covering all hook kinds, hardening modules, stress testing, and per-test execution.
+
+| Capability | API |
+|---|---|
+| **Full test suite** — all hook kinds + hardening self-tests | `test_run()` |
+| **Stress tests** — concurrent hook/unhook, chain depth, batch saturation | `test_stress()` |
+| **Single test** — run one named test case | `test_run_one()` |
+| **Test listing** — enumerate all available tests | `test_list()` |
+
+```cpp
+// Run all tests
+auto suite = engine.test_run({ .verbosity = vanhooks::TestVerbosity::Verbose });
+printf("Passed: %zu / %zu\n", suite->passed, suite->total);
+
+// Stress test: 8 threads, 10k iterations
+auto stress = engine.test_stress({ .thread_count = 8, .iterations = 10000 });
+
+// Run a single test by name
+auto one = engine.test_run_one("hook_iat", 5000);
+if (one && one->result == vanhooks::TestResult::Pass)
+    printf("IAT hook test passed\n");
+```
+
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
+
+## 🔥 Fuzzing Infrastructure
+
+Phase 29 adds a programmatic fuzzing API with support for libFuzzer, AFL++, and Honggfuzz, covering 8 subsystem targets with corpus management and sanitizer integration.
+
+| Capability | API |
+|---|---|
+| **Fuzz session** — start/stop fuzz runs per target | `fuzz_start()`, `fuzz_stop()` |
+| **8 fuzz targets** — disasm, trampoline, PE/ELF/Mach-O, injection, scanner | `FuzzTarget` enum |
+| **Corpus management** — stats and minimisation | `fuzz_corpus_stats()`, `fuzz_corpus_minimise()` |
+| **Sanitizer check** — ASan/TSan/UBSan/MSan/LSan runtime detection | `fuzz_sanitizer_available()` |
+| **Target listing** — enumerate all fuzz targets | `fuzz_list_targets()` |
+
+```cpp
+// Start fuzzing the disassembler
+engine.fuzz_start({
+    .engine     = vanhooks::FuzzEngine::LibFuzzer,
+    .target     = vanhooks::FuzzTarget::Disasm,
+    .corpus_dir = "corpus/disasm",
+    .output_dir = "crashes/disasm",
+});
+
+// Later: collect results
+auto crashes = engine.fuzz_stop();
+if (crashes)
+    printf("Found %zu unique crashes\n", crashes->size());
+
+// Minimise corpus
+auto stats = engine.fuzz_corpus_minimise("corpus/disasm");
+printf("Minimised: %zu → %zu inputs\n", stats->total_inputs, stats->minimised_count);
+```
+
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
+
+## ⚙️ CI/CD Pipeline
+
+Phase 30 adds a programmatic CI/CD API for workflow validation, local job execution, SDK sync checking, release automation, coverage reporting, static analysis, and binary size tracking.
+
+| Capability | API |
+|---|---|
+| **Workflow validation** — parse and check CI YAML | `ci_validate_workflow()` |
+| **Local job execution** — run any CI platform config locally | `ci_run_job()` |
+| **SDK sync check** — detect header drift between source and SDK | `ci_check_sdk_sync()` |
+| **Release build** — tag-triggered archive generation | `ci_release_build()` |
+| **Coverage report** — line/branch/function coverage | `ci_coverage_report()` |
+| **Static analysis** — clang-tidy, cppcheck, PVS-Studio | `ci_static_analysis()` |
+| **Binary size tracking** — per-target, per-platform .lib/.dll sizes | `ci_binary_sizes()` |
+
+```cpp
+// Check SDK sync
+auto sync = engine.ci_check_sdk_sync();
+if (sync && !sync->in_sync)
+    for (auto& h : sync->mismatched_headers)
+        printf("  out of sync: %s\n", h.c_str());
+
+// Run coverage report
+auto cov = engine.ci_coverage_report();
+if (cov)
+    printf("Coverage: %.1f%% lines, %.1f%% branches\n", cov->line_pct, cov->branch_pct);
+
+// Run static analysis
+auto sa = engine.ci_static_analysis("clang-tidy");
+if (sa)
+    printf("Issues: %zu errors, %zu warnings\n", sa->issues_error, sa->issues_warning);
+```
+
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
+
+## 📖 API Documentation
+
+Phase 31 adds a programmatic documentation API for generating references, querying module/hook/injection docs, and building error guides — all from within the engine.
+
+| Capability | API |
+|---|---|
+| **Generate docs** — Html/Markdown/Json from header comments | `doc_generate()` |
+| **Module reference** — per-module info (category, detects, functions) | `doc_module_info()`, `doc_list_modules()` |
+| **Hook kind guide** — 17 kinds with platform + performance data | `doc_hook_kinds()` |
+| **Injection guide** — 25 techniques with stealth rankings | `doc_injection_techniques()` |
+| **Error reference** — cause, troubleshooting, recovery examples | `doc_error_reference()` |
+
+```cpp
+// Get hook kind decision guide
+auto kinds = engine.doc_hook_kinds();
+for (auto& k : *kinds)
+    printf("%s: %s (%s)\n", k.name.c_str(), k.when_to_use.c_str(), k.performance.c_str());
+
+// Get injection techniques sorted by stealth
+auto techs = engine.doc_injection_techniques();
+std::sort(techs->begin(), techs->end(),
+    [](auto& a, auto& b) { return a.stealth_rank < b.stealth_rank; });
+
+// Query a specific module
+auto info = engine.doc_module_info("vh::unhook");
+// info->category == "vigil", info->description == "Restore .text of system DLLs..."
+```
+
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
+
+## 🔧 SDK Improvements
+
+Phase 32 adds programmatic SDK management: automated sync, version checking, changelog, minimal profile builds, and multi-language binding generation.
+
+| Capability | API |
+|---|---|
+| **Automated sync** — copy changed headers + libs to SDK | `sdk_sync()` |
+| **Version check** — header/lib version match verification | `sdk_version()` |
+| **Changelog** — structured per-version change entries | `sdk_changelog()` |
+| **Minimal builds** — 4 profiles: Full/Minimal/Analysis/Stealth | `sdk_build_minimal()` |
+| **Binding generation** — C, Python, Rust, C# wrappers | `sdk_generate_bindings()` |
+
+```cpp
+// Sync SDK headers and libs
+auto report = engine.sdk_sync();
+printf("Synced %zu headers, %zu libs\n", report->headers_copied, report->libs_copied);
+
+// Check version match
+auto ver = engine.sdk_version();
+printf("VanHooks %s (match: %s)\n", ver->full_string.c_str(),
+       ver->header_matches_lib ? "yes" : "NO");
+
+// Generate Python bindings
+BindingGenConfig cfg;
+cfg.language   = BindingLang::Python;
+cfg.output_dir = "bindings/python";
+auto result = engine.sdk_generate_bindings(cfg);
+// result->generated_files == {"vanhooks.pyi", "vanhooks_bindings.cpp"}
+```
+
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
+
+## 📚 Examples & Tutorials
+
+VanHooks ships a built-in example registry with 7 comprehensive examples that cover every major subsystem. Query, inspect, and build examples programmatically.
+
+| Capability | API |
+|---|---|
+| List all examples | `example_list()` |
+| Get example metadata | `example_get(name)` |
+| Build & run an example | `example_build(config)` |
+
+### Built-in Examples
+
+| Name | Category | Demonstrates |
+|---|---|---|
+| `quickstart` | core | `hook_trampoline`, `enable`, `remove` |
+| `all_hook_kinds` | core | All 17 HookKind values |
+| `stealth_pipeline` | stealth | `ac_profile`, `unhook`, `peb_mask`, `telemetry`, `callstack_spoof`, `sleep_obf` |
+| `analysis_workflow` | analysis | `pe_exports`, `symbols`, `pattern_scan`, `callstack_capture` |
+| `network_capture` | net | `net_aware`, `net_dns_fingerprint`, `net_tls_fingerprint` |
+| `cross_platform` | cross-platform | `hook_trampoline`, `hook_plt`, `hook_iat`, platform macros |
+| `game_integration` | game-integration | `hook_vtable`, `unhook`, `peb_mask`, `poly::generate`, `shadow::create` |
+
+```cpp
+auto examples = engine.example_list();
+for (auto& ex : examples.value())
+    printf("%s — %s\n", ex.name.c_str(), ex.title.c_str());
+
+ExampleBuildConfig cfg;
+cfg.example_name = "stealth_pipeline";
+cfg.run_after     = true;
+auto result = engine.example_build(cfg);
+```
+
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
+
+## ⚡ Performance Pass
+
+Micro-benchmark 8 core operations, track per-module memory footprints, and manage arena allocators for trampoline stubs.
+
+| Capability | API |
+|---|---|
+| Benchmark one target | `perf_benchmark(config)` |
+| Benchmark all 8 targets | `perf_benchmark_all()` |
+| Memory footprint | `perf_memory_footprint()` |
+| Arena allocator | `perf_arena_init` / `perf_arena_stats` / `perf_arena_destroy` |
+
+### Benchmark Targets
+
+`HookInstall` · `HookDispatch` · `HookRemove` · `BatchInstall` · `TrampolineAlloc` · `ArenaAlloc` · `LockContention` · `CachePressure`
+
+```cpp
+BenchmarkConfig cfg;
+cfg.target     = BenchmarkTarget::HookDispatch;
+cfg.iterations = 100000;
+auto r = engine.perf_benchmark(cfg);
+printf("avg %.1f ns, p99 %.1f ns\n", r->avg_ns, r->p99_ns);
+
+// Or benchmark everything at once
+auto all = engine.perf_benchmark_all();
+```
+
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
+
 ## 💉 Process Injection
 
-VanHooks includes a full injection subsystem with 24 techniques, all hardened with indirect syscalls. Include `<vh/inject/inject.vh>` for the core 4 methods, or `<vh/inject/inject_unified.vh>` for the full 24-technique catalogue.
+VanHooks includes a full injection subsystem with 33 techniques, all hardened with indirect syscalls. Include `<vh/inject/inject.vh>` for the core 4 methods, or `<vh/inject/inject_unified.vh>` for the full 33-technique catalogue.
 
 ### Quick Start — LoadLibrary (simplest)
 
@@ -384,9 +824,9 @@ auto inj = vh::inject(pid, dll_path,
 | **ThreadHijack** | Visible | No | Immediate | No thread-creation callback |
 | **ApcQueue** | Visible | No | Non-deterministic | No thread-creation callback |
 
-### Extended Catalogue (24 techniques)
+### Extended Catalogue (33 techniques)
 
-The unified API (`<vh/inject/inject_unified.vh>`) adds 20 more techniques across five groups:
+The unified API (`<vh/inject/inject_unified.vh>`) adds 29 more techniques across eight groups:
 
 - **Process-birth:** EarlyBird APC, Herpaderping, Ghosting, Doppelgänging
 - **Remote-thread modern:** NtCreateThreadEx, RtlCreateUserThread, Reflective, SetWindowsHookEx
@@ -394,6 +834,8 @@ The unified API (`<vh/inject/inject_unified.vh>`) adds 20 more techniques across
 - **Callback-hijack:** KernelCallbackTable, Threadless callback, Module-stomp
 - **Window-message:** PROP_PROPAGATE, Extra Window Memory
 - **Process manipulation:** Process Hollowing, PoolParty, NtMapViewOfSection
+- **Linux / macOS / Android:** Ptrace, ProcessVmWritev, LdPreload, ProcMem, TaskForPid, DyldInsert, AndroidPtrace
+- **Enhanced:** ReflectiveV2 (TLS + exceptions + delay imports), ManualMapV2 (SEH + CRT + API sets)
 
 ### Stealth Hardening
 
@@ -524,6 +966,7 @@ VanHooks can be built as a shared library (`.dll`/`.so`/`.dylib`) from source. A
 The precompiled `.lib` files in this SDK are **static libraries** — `VH_API` resolves to nothing and all symbols are linked directly. Shared library builds require the full source license.
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
+
 ## 📁 Package Layout
 
 ```

@@ -75,4 +75,25 @@ namespace veh_hook        { struct Handle; struct Options; }
 // ── Extended injection catalogue ──────────────────────────────────────────────
 namespace inject_ex       { struct RemoteHandle; }
 
+// ── Phase 39: macOS deep support ─────────────────────────────────────────────
+namespace macho_vigil     { struct DyldImageInfo; struct SectionInfo; }
+namespace sip_aware       { struct SipInfo; }
+namespace hardened_runtime { struct RuntimeInfo; }
+namespace kext_enum       { struct KextInfo; }
+namespace pac_aware       { struct PacInfo; }
+
+// ── Phase 40: Linux deep support ─────────────────────────────────────────────
+namespace linux_vigil     { struct ModuleInfo; struct MemoryRegion; struct ThreadInfo; }
+namespace procfs_vigil    { struct FdInfo; struct CgroupInfo; struct NamespaceInfo; }
+namespace ebpf_aware      { struct BpfProgInfo; struct BpfMapInfo; }
+namespace landlock_aware  { struct LandlockInfo; }
+namespace proton_aware    { struct WineInfo; }
+namespace selinux_aware   { struct MacInfo; }
+
+// ── Phase 41: Mobile support ─────────────────────────────────────────────────
+namespace android_hook    { struct NativeHookInfo; struct ArtMethodInfo; }
+namespace android_inject  { struct InjectionResult; }
+namespace android_ac_aware { struct SafetyNetInfo; struct RootDetectionInfo; struct AcModuleInfo; }
+namespace ios_research    { struct JailbreakInfo; struct ObjcMethodInfo; }
+
 } // namespace vh

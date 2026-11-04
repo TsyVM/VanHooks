@@ -207,6 +207,130 @@ struct SoftBp {
     [[nodiscard]] constexpr bool valid() const noexcept { return true; }
 };
 
+// ─────────────────────────────────────────────
+//  Conditional hook options  (Phase 21)
+// ─────────────────────────────────────────────
+
+struct Conditional {
+    vanhooks::ConditionFn condition  = nullptr;
+    void*                 user_data  = nullptr;
+    int32_t               priority   = 0;
+    bool                  thread_safe = true;
+    bool                  stats      = false;
+    std::string           tag;
+
+    [[nodiscard]] constexpr bool valid() const noexcept { return condition != nullptr; }
+};
+
+// ─────────────────────────────────────────────
+//  Lazy hook options  (Phase 21)
+// ─────────────────────────────────────────────
+
+struct Lazy {
+    int32_t     priority    = 0;
+    bool        thread_safe = true;
+    bool        stats       = false;
+    std::string tag;
+
+    [[nodiscard]] constexpr bool valid() const noexcept { return true; }
+};
+
+// ─────────────────────────────────────────────
+//  Exit hook options  (Phase 21)
+// ─────────────────────────────────────────────
+
+struct ExitHook {
+    size_t      max_scan_bytes = 4096;
+    int32_t     priority       = 0;
+    bool        thread_safe    = true;
+    bool        stats          = false;
+    std::string tag;
+
+    [[nodiscard]] constexpr bool valid() const noexcept { return max_scan_bytes > 0; }
+};
+
+// ─────────────────────────────────────────────
+//  macOS dyld interpose options  (Phase 22)
+// ─────────────────────────────────────────────
+
+struct DyldInterpose {
+    std::string original_symbol;
+    std::string tag;
+
+    [[nodiscard]] bool valid() const noexcept { return !original_symbol.empty(); }
+};
+
+// ─────────────────────────────────────────────
+//  macOS Mach-O import hook options  (Phase 22)
+// ─────────────────────────────────────────────
+
+struct MachOImport {
+    std::string library_name;
+    std::string symbol_name;
+    std::string tag;
+
+    [[nodiscard]] bool valid() const noexcept {
+        return !library_name.empty() && !symbol_name.empty();
+    }
+};
+
+// ─────────────────────────────────────────────
+//  ARM64 veneer stub options  (Phase 22)
+// ─────────────────────────────────────────────
+
+struct Veneer {
+    bool        prefer_adrp_ldr = true;
+    std::string tag;
+
+    [[nodiscard]] constexpr bool valid() const noexcept { return true; }
+};
+
+// ─────────────────────────────────────────────
+//  Relay hook options  (Phase 24)
+// ─────────────────────────────────────────────
+
+struct Relay {
+    size_t      pool_size   = 64;
+    bool        thread_safe = true;
+    std::string tag;
+
+    [[nodiscard]] constexpr bool valid() const noexcept { return pool_size > 0; }
+};
+
+// ─────────────────────────────────────────────
+//  Copy-on-write hook options  (Phase 24)
+// ─────────────────────────────────────────────
+
+struct Cow {
+    bool        thread_safe = true;
+    std::string tag;
+
+    [[nodiscard]] constexpr bool valid() const noexcept { return true; }
+};
+
+// ─────────────────────────────────────────────
+//  Signal-based hook options  (Phase 24, Linux)
+// ─────────────────────────────────────────────
+
+struct Signal {
+    int         signal_num  = 5;  // SIGTRAP
+    std::string tag;
+
+    [[nodiscard]] constexpr bool valid() const noexcept { return signal_num > 0; }
+};
+
+// ─────────────────────────────────────────────
+//  JIT hook options  (Phase 24)
+// ─────────────────────────────────────────────
+
+struct Jit {
+    size_t      monitor_interval_ms = 100;
+    bool        auto_repatch        = true;
+    std::string tag;
+
+    [[nodiscard]] constexpr bool valid() const noexcept { return true; }
+};
+
 } // namespace vh::config
 
 // ─────────────────────────────────────────────

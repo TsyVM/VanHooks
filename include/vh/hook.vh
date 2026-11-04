@@ -12,6 +12,7 @@
 #include <string>
 #include <cstddef>
 #include <functional>
+#include <optional>
 
 #include <vanhooks/vanhooks.vh>
 #include "result.vh"
@@ -34,6 +35,15 @@ namespace detail {
     vanhooks::Result<vanhooks::HookHandle> hook_chain(
         vanhooks::Engine*, vanhooks::HookHandle,
         void* next_detour, void** next_original_out, std::string tag);
+
+    // Phase 21 bridges
+    Status      hook_swap_detour  (vanhooks::Engine*, vanhooks::HookHandle, void* new_detour, void** old_out) noexcept;
+    int32_t     hook_priority     (vanhooks::Engine*, vanhooks::HookHandle) noexcept;
+    Status      hook_set_priority (vanhooks::Engine*, vanhooks::HookHandle, int32_t) noexcept;
+    std::optional<vanhooks::HookStatsSnapshot> hook_stats(vanhooks::Engine*, vanhooks::HookHandle) noexcept;
+    Status      hook_enable_stats (vanhooks::Engine*, vanhooks::HookHandle) noexcept;
+    Status      hook_disable_stats(vanhooks::Engine*, vanhooks::HookHandle) noexcept;
+    Status      hook_reset_stats  (vanhooks::Engine*, vanhooks::HookHandle) noexcept;
 } // namespace detail
 
 class Hook {
@@ -127,6 +137,52 @@ public:
     void*       target()     const noexcept { return handle_.valid() ? detail::hook_target(engine_, handle_)     : nullptr; }
     void*       detour()     const noexcept { return handle_.valid() ? detail::hook_detour(engine_, handle_)     : nullptr; }
     void*       trampoline() const noexcept { return handle_.valid() ? detail::hook_trampoline(engine_, handle_) : nullptr; }
+
+    // ── Phase 21 — Hook Engine v2 ───────────────────────────────────────────
+
+    [[nodiscard]]
+    Status swap_detour(void* new_detour, void** old_detour_out = nullptr) {
+        if (!handle_.valid()) return std::unexpected(vanhooks::Error::HookNotFound);
+        return detail::hook_swap_detour(engine_, handle_, new_detour, old_detour_out);
+    }
+
+    template<typename Fn>
+    [[nodiscard]]
+    Status swap_detour(Fn* new_detour, Fn** old_detour_out = nullptr) {
+        return swap_detour(reinterpret_cast<void*>(new_detour),
+                           reinterpret_cast<void**>(old_detour_out));
+    }
+
+    [[nodiscard]]
+    int32_t priority() const noexcept {
+        return handle_.valid() ? detail::hook_priority(engine_, handle_) : 0;
+    }
+
+    [[nodiscard]]
+    Status set_priority(int32_t p) {
+        if (!handle_.valid()) return std::unexpected(vanhooks::Error::HookNotFound);
+        return detail::hook_set_priority(engine_, handle_, p);
+    }
+
+    [[nodiscard]]
+    std::optional<vanhooks::HookStatsSnapshot> stats() const noexcept {
+        return handle_.valid() ? detail::hook_stats(engine_, handle_) : std::nullopt;
+    }
+
+    [[nodiscard]] Status enable_stats() {
+        if (!handle_.valid()) return std::unexpected(vanhooks::Error::HookNotFound);
+        return detail::hook_enable_stats(engine_, handle_);
+    }
+
+    [[nodiscard]] Status disable_stats() {
+        if (!handle_.valid()) return std::unexpected(vanhooks::Error::HookNotFound);
+        return detail::hook_disable_stats(engine_, handle_);
+    }
+
+    [[nodiscard]] Status reset_stats() {
+        if (!handle_.valid()) return std::unexpected(vanhooks::Error::HookNotFound);
+        return detail::hook_reset_stats(engine_, handle_);
+    }
 
     // Escape hatches for Engine interop (power users only).
     vanhooks::HookHandle  handle() const noexcept { return handle_; }

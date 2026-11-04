@@ -319,6 +319,82 @@ inject_pool_party(std::uint32_t pid,
 inject_ntmapview(std::uint32_t pid,
                  std::span<const std::uint8_t> shellcode,
                  NtMapViewOptions opts = {}) noexcept;
+// ─────────────────────────────────────────────
+//  Phase 23 — Injection Engine v2
+// ─────────────────────────────────────────────
+
+// ── Linux injection catalogue ────────────────
+
+/// ptrace-attach + PTRACE_POKETEXT shellcode injection.
+/// Writes a dlopen shellcode stub into the target's instruction pointer
+/// and single-steps it. Linux x86-64 only.
+[[nodiscard]] vh::Result<RemoteHandle>
+inject_ptrace(std::uint32_t pid,
+              std::span<const std::uint8_t> shellcode) noexcept;
+
+/// process_vm_writev injection. Writes shellcode into the target's
+/// address space without ptrace-attaching. Requires CAP_SYS_PTRACE
+/// or same-user non-SUID target. Linux only.
+[[nodiscard]] vh::Result<RemoteHandle>
+inject_process_vm_writev(std::uint32_t pid,
+                         std::span<const std::uint8_t> shellcode) noexcept;
+
+/// LD_PRELOAD injection by spawning the target with the LD_PRELOAD
+/// environment variable. Returns the child PID in remote_base.
+/// Linux only; requires the target has not yet been started.
+[[nodiscard]] vh::Result<RemoteHandle>
+inject_ld_preload(std::wstring_view target_exe,
+                  std::string_view  so_path) noexcept;
+
+/// dlopen via /proc/<pid>/mem injection. Writes dlopen shellcode
+/// by patching /proc/pid/mem directly (no ptrace needed on some
+/// kernel configs). Linux only.
+[[nodiscard]] vh::Result<RemoteHandle>
+inject_proc_mem(std::uint32_t pid,
+                std::string_view so_path) noexcept;
+
+// ── macOS injection ──────────────────────────
+
+/// task_for_pid + mach_vm_write injection. Requires the
+/// com.apple.security.cs.debugger entitlement or SIP disabled.
+/// macOS only; returns Error::Unsupported on other platforms.
+[[nodiscard]] vh::Result<RemoteHandle>
+inject_task_for_pid(std::uint32_t pid,
+                    std::span<const std::uint8_t> shellcode) noexcept;
+
+/// DYLD_INSERT_LIBRARIES injection by spawning the target with the
+/// environment variable set. macOS only.
+[[nodiscard]] vh::Result<RemoteHandle>
+inject_dyld_insert(std::wstring_view target_exe,
+                   std::string_view  dylib_path) noexcept;
+
+// ── Android injection ────────────────────────
+
+/// ptrace + dlopen via linker namespace injection.
+/// Requires root or debuggable target. Android only.
+[[nodiscard]] vh::Result<RemoteHandle>
+inject_android_ptrace(std::uint32_t pid,
+                      std::string_view so_path) noexcept;
+
+// ── Reflective DLL v2 ───────────────────────
+
+/// Enhanced reflective DLL injection with TLS callback support,
+/// exception directory registration, and delay-import resolution.
+[[nodiscard]] vh::Result<RemoteHandle>
+inject_reflective_v2(std::uint32_t pid,
+                     std::span<const std::uint8_t> pe_bytes,
+                     vanhooks::ReflectiveV2Options opts = {}) noexcept;
+
+// ── Manual map v2 ───────────────────────────
+
+/// Full PE loader with SEH exception tables, TLS callbacks,
+/// static CRT initializers, delay-import resolution, and
+/// API set redirection.
+[[nodiscard]] vh::Result<RemoteHandle>
+inject_manual_map_v2(std::uint32_t pid,
+                     std::span<const std::uint8_t> pe_bytes,
+                     vanhooks::ManualMapV2Options opts = {}) noexcept;
+
 } // namespace vh::inject_ex
 
 

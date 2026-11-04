@@ -1,4 +1,4 @@
-<div align="center">
+﻿<div align="center">
 
 <img src="vh-logo.png" width="400" alt="VanHooks"/>
 
@@ -33,7 +33,8 @@ Everything in this document lives in the `vh::` namespace unless stated otherwis
 
 [Error Codes](#-part-ix--error-codes) · [Quick Reference](#-part-x--quick-reference-card) · [Process Injection](#-part-xi--process-injection) · [Stealth Helpers](#-part-xii--stealth-helpers-vhinject_stealth)
 
-[Phase 10 — Hardening](#-part-xiii--phase-10-hardening) · [Shared Library ABI](#-part-xiv--shared-library-abi)
+[Phase 10 — Hardening](#-part-xiii--phase-10-hardening) · [Shared Library ABI](#-part-xiv--shared-library-abi) · [Hook Engine v2](#-part-xv--hook-engine-v2) · [Cross-Platform Parity](#-part-xvi--cross-platform-hook-parity)
+
 </div>
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
@@ -1206,9 +1207,6 @@ vh_close(p);
 Phase 10 introduces 19 new modules covering core hardening, anti-cheat evasion on Windows and Linux, extended injection, and hypervisor-assisted hooks. All modules are optional — include only what you need.
 
 ---
-<div align="center">
-
-### Core — Polymorphic Trampolines `<vh/core/polymorphic.vh>`
 
 ### Core — Polymorphic Trampolines `<vh/core/polymorphic.vh>`
 
@@ -2055,6 +2053,2798 @@ Shared library builds require the VanHooks source license. When building shared 
 VH_API Result<PolyTrampoline> generate(void* target, void* detour,
                                        const PolyConfig& cfg = {}) noexcept;
 ```
+
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
+
+## ⚡ Part XV — Hook Engine v2
+
+Phase 21 adds advanced hook primitives to `vanhooks::Engine` and `vh::Hook`.
+
+### Conditional hooks
+
+```cpp
+Result<HookHandle> Engine::hook_conditional(
+    void* target, void* detour, void** original_out = nullptr,
+    ConditionalOptions opts = {});
+```
+
+Installs a trampoline hook that fires only when `opts.condition(target, opts.user_data)` returns `true`. The `ConditionFn` signature is `bool (*)(void* target, void* user_data) noexcept`.
+
+**Options** (`ConditionalOptions`):
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `condition` | `ConditionFn` | — | Predicate called before each detour invocation |
+| `user_data` | `void*` | `nullptr` | Passed to `condition()` |
+| `priority` | `int32_t` | `0` | Hook ordering (higher fires first) |
+| `thread_safe` | `bool` | `true` | Suspend threads during patch |
+| `stats` | `bool` | `false` | Enable per-hook statistics |
+| `tag` | `std::string` | `""` | Human-readable label |
+
+**Errors**: `InvalidArgument` (null target/detour/condition), plus all trampoline errors.
+
+---
+
+### Lazy hooks
+
+```cpp
+Result<HookHandle> Engine::hook_lazy(
+    void* target, void* detour, void** original_out = nullptr,
+    LazyOptions opts = {});
+```
+
+Defers trampoline installation until the target function is first called. An INT3/SoftBp at the target captures the first hit, installs the real trampoline, removes the breakpoint, and replays the call.
+
+**Errors**: `InvalidArgument`, plus trampoline errors on resolution.
+
+---
+
+### Function-exit hook
+
+```cpp
+Result<HookHandle> Engine::hook_exit(
+    void* target, ReturnCallback callback,
+    ExitHookOptions opts = {});
+```
+
+Scans the function body for RET/RETN instructions (up to `opts.max_scan_bytes` bytes) and patches every return path so the callback fires on function exit. Uses `disasm::Disassembler` for the control-flow scan.
+
+**Errors**: `InvalidArgument`, `ExitScanFailed` (no RET found in scan range).
+
+---
+
+### Atomic detour swap
+
+```cpp
+Status Engine::swap_detour(HookHandle handle,
+                           void* new_detour,
+                           void** old_detour_out = nullptr);
+
+// Also available on vh::Hook:
+Status Hook::swap_detour(void* new_detour, void** old_detour_out = nullptr);
+```
+
+Replaces a hook's detour function in-place under a `ThreadFence`. The trampoline is rebuilt with the new target; the caller never sees an unhook window. Supported for `Trampoline`, `CallSite`, and `ThreadLocal` hook kinds.
+
+**Errors**: `InvalidArgument`, `HookNotFound`, `SwapNotSupported` (unsupported hook kind).
+
+---
+
+### Hook priority
+
+```cpp
+Status Engine::set_priority(HookHandle handle, int32_t priority);
+
+// Also on vh::Hook:
+Status Hook::set_priority(int32_t p);
+int32_t Hook::priority() const noexcept;
+```
+
+Sets numeric priority for ordering multiple hooks on the same target. Higher priority hooks fire first in the chain. Readable via `HookDesc::priority`.
+
+---
+
+### Per-hook statistics
+
+```cpp
+std::optional<HookStatsSnapshot> Engine::stats(HookHandle handle) const;
+Status Engine::enable_stats(HookHandle handle);
+Status Engine::disable_stats(HookHandle handle);
+Status Engine::reset_stats(HookHandle handle);
+```
+
+`HookStatsSnapshot` fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `call_count` | `uint64_t` | Total invocations |
+| `total_duration_ns` | `uint64_t` | Cumulative wall time |
+| `average_duration_ns` | `uint64_t` | `total / count` |
+| `max_duration_ns` | `uint64_t` | Worst-case latency |
+| `last_call_timestamp` | `int64_t` | TSC of most recent call |
+
+Statistics are only collected when installed with `stats = true` or after `enable_stats()`.
+
+---
+
+### Thread-targeted hooks (expanded)
+
+```cpp
+void Engine::thread_local_enable_set (HookHandle h, std::span<const uint32_t> thread_ids);
+void Engine::thread_local_disable_set(HookHandle h, std::span<const uint32_t> thread_ids);
+void Engine::thread_local_disable_all(HookHandle h) noexcept;
+```
+
+Enable or disable a thread-local hook for a set of thread IDs at once. Complements the existing single-thread `thread_local_enable()` / `thread_local_disable()`.
+
+---
+
+### Type-safe hooks
+
+```cpp
+template<typename Sig>
+Result<HookHandle> Engine::hook_typed(
+    Sig target, Sig detour, Sig* original_out = nullptr,
+    TrampolineOptions opts = {});
+```
+
+Compile-time signature match: `static_assert` verifies `Sig` is a function pointer type, preventing silent calling-convention mismatches. Delegates to `hook_trampoline`.
+
+---
+
+### ReturnContext duration tracking
+
+`ReturnContext` now includes TSC-based duration fields populated by the return-hook machinery:
+
+**x64 / ARM64:**
+| Field | Type | Description |
+|---|---|---|
+| `entry_tsc` | `uint64_t` | RDTSC at function entry |
+| `duration_ns` | `uint64_t` | Wall time in nanoseconds |
+
+**x86:**
+| Field | Type | Description |
+|---|---|---|
+| `entry_tsc_lo` / `entry_tsc_hi` | `uint32_t` | RDTSC split (low / high) |
+| `duration_ns_lo` / `duration_ns_hi` | `uint32_t` | Duration split (low / high) |
+
+---
+
+### Error codes (Phase 21)
+
+| Code | Value | Description |
+|---|---|---|
+| `ConditionNotMet` | 1000 | Condition predicate returned false |
+| `LazyNotResolved` | 1001 | Lazy hook not yet resolved |
+| `SwapNotSupported` | 1002 | Hook kind does not support detour swap |
+| `PriorityConflict` | 1003 | Priority collision on same target |
+| `ExitScanFailed` | 1004 | No RET/RETN found in scan range |
+
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
+
+## 🌍 Part XVI — Cross-Platform Hook Parity
+
+Phase 22 extends hook coverage to macOS and Linux-specific mechanisms. All functions return `Error::Unsupported` on platforms where they are not applicable.
+
+### macOS dyld interpose
+
+```cpp
+Result<HookHandle> Engine::hook_dyld_interpose(void* detour, DyldInterposeOptions opts);
+```
+
+Registers a DYLD_INSERT_LIBRARIES-style interposition at runtime. Resolves the original symbol via `dlsym(RTLD_DEFAULT, ...)` and patches GOT entries.
+
+**Options** (`DyldInterposeOptions`):
+
+| Field | Type | Description |
+|---|---|---|
+| `original_symbol` | `std::string` | Symbol name to interpose (e.g. `"malloc"`) |
+| `tag` | `std::string` | Human-readable label |
+
+**Errors**: `InvalidArgument`, `SymbolNotFound`, `DyldInterposeFailed`.
+
+---
+
+### macOS Mach-O import hook
+
+```cpp
+Result<HookHandle> Engine::hook_macho_import(void* detour, MachOImportOptions opts);
+```
+
+Patches lazy/non-lazy symbol pointers in Mach-O `__DATA` segments.
+
+**Options** (`MachOImportOptions`):
+
+| Field | Type | Description |
+|---|---|---|
+| `library_name` | `std::string` | Target library (e.g. `"libSystem.B.dylib"`) |
+| `symbol_name` | `std::string` | Symbol to redirect |
+| `tag` | `std::string` | Human-readable label |
+
+**Errors**: `InvalidArgument`, `ModuleNotFound`, `MachOImportNotFound`.
+
+---
+
+### Hardware breakpoint hooks (Linux / macOS)
+
+```cpp
+Result<HookHandle> Engine::hook_hwbp_linux(void* target, MidCallback callback,
+                                            HwBpOptions opts = {});
+
+Result<HookHandle> Engine::hook_hwbp_macos(void* target, MidCallback callback,
+                                            HwBpOptions opts = {});
+```
+
+Platform-specific hardware breakpoint hooks. Currently delegate to the SoftBp fallback mechanism; native DR register access via `ptrace` (Linux) and `thread_set_state` (macOS) is reserved for a future revision.
+
+---
+
+### ARM64 veneer stubs
+
+`VeneerOptions` struct is defined for B/BL range extension via ADR+LDR veneer stubs:
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `prefer_adrp_ldr` | `bool` | `true` | Use ADRP+LDR pair (larger range) vs ADR+BR |
+| `tag` | `std::string` | `""` | Human-readable label |
+
+---
+
+### Error codes (Phase 22)
+
+| Code | Value | Description |
+|---|---|---|
+| `DyldInterposeFailed` | 1100 | dyld interpose registration failed |
+| `MachOImportNotFound` | 1101 | Symbol not found in Mach-O imports |
+| `PtraceSetFailed` | 1102 | ptrace DR register write failed |
+| `MachThreadSetFailed` | 1103 | thread_set_state failed |
+| `VeneerAllocFailed` | 1104 | Veneer stub allocation failed |
+| `RiscVUnsupported` | 1105 | RISC-V not yet implemented |
+
+### Configuration structs (vh::config)
+
+Phase 21/22 add these to `vh::config::`:
+
+| Struct | Phase | Description |
+|---|---|---|
+| `Conditional` | 21 | Predicate-gated hook options |
+| `Lazy` | 21 | Deferred hook options |
+| `ExitHook` | 21 | Multi-ret exit hook options |
+| `DyldInterpose` | 22 | macOS dyld interpose options |
+| `MachOImport` | 22 | macOS Mach-O import options |
+| `Veneer` | 22 | ARM64 veneer stub options |
+
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
+
+## 💉 Part XVII — Injection Engine v2
+
+Phase 23 expands the injection catalogue from 24 to 33 techniques, adds cross-platform injection, a shellcode generator, and an injection recommendation engine.
+
+---
+
+### inject_recommend
+
+```cpp
+std::vector<InjectRecommendResult> Engine::inject_recommend(
+    uint32_t pid,
+    InjectPlatform platform = InjectPlatform::Auto);
+```
+
+Surveys the target process and returns a ranked list of recommended injection techniques. Each result contains a stealth score, reliability score, and rationale.
+
+**Return type:** `InjectRecommendResult`
+
+| Field | Type | Description |
+|---|---|---|
+| `method_id` | `uint32_t` | `InjectMethodEx` numeric value |
+| `technique_name` | `std::string` | Human-readable name |
+| `stealth_score` | `int32_t` | 0–100; higher = less detectable |
+| `reliability_score` | `int32_t` | 0–100; higher = more reliable |
+| `rationale` | `std::string` | Why this technique ranks here |
+
+**InjectPlatform enum:**
+
+| Value | Meaning |
+|---|---|
+| `Auto` | Detect from current platform |
+| `WindowsX64` | Windows x86-64 techniques |
+| `WindowsX86` | Windows x86 techniques |
+| `WindowsARM64` | Windows ARM64 techniques |
+| `LinuxX64` | Linux x86-64 techniques |
+| `LinuxARM64` | Linux ARM64 techniques |
+| `MacosX64` | macOS x86-64 techniques |
+| `MacosARM64` | macOS ARM64 techniques |
+| `Android` | Android techniques |
+
+---
+
+### shellcode_generate
+
+```cpp
+Result<std::vector<uint8_t>> Engine::shellcode_generate(
+    std::span<const uint8_t> code,
+    ShellcodeGenOptions opts = {});
+```
+
+Generates position-independent shellcode from a raw code buffer. Supports null-byte elimination via XOR encoding with an auto-generated decoder stub.
+
+**ShellcodeGenOptions:**
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `arch` | `ShellcodeArch` | `X64` | Target architecture (`X86`, `X64`, `ARM64`) |
+| `null_free` | `bool` | `false` | Eliminate null bytes via XOR encoding |
+| `max_size` | `size_t` | `65536` | Maximum output size; returns `ShellcodeGenFailed` if exceeded |
+
+**Errors:** `InvalidArgument` (empty input), `ShellcodeGenFailed` (no valid XOR key or size exceeded).
+
+---
+
+### Linux injection functions
+
+All return `Result<inject_ex::RemoteHandle>`. On non-Linux platforms they return `Error::Unsupported`.
+
+#### inject_ptrace
+
+```cpp
+vh::Result<RemoteHandle> inject_ex::inject_ptrace(
+    uint32_t pid, std::span<const uint8_t> shellcode);
+```
+
+ptrace-attach + PTRACE_POKETEXT shellcode injection. Writes a dlopen shellcode stub into the target's instruction pointer and single-steps it. Linux x86-64 only.
+
+#### inject_process_vm_writev
+
+```cpp
+vh::Result<RemoteHandle> inject_ex::inject_process_vm_writev(
+    uint32_t pid, std::span<const uint8_t> shellcode);
+```
+
+Cross-process write without ptrace-attach. Requires `CAP_SYS_PTRACE` or same-user non-SUID target.
+
+#### inject_ld_preload
+
+```cpp
+vh::Result<RemoteHandle> inject_ex::inject_ld_preload(
+    std::wstring_view target_exe, std::string_view so_path);
+```
+
+Spawns the target with `LD_PRELOAD` set. Only works at process creation time.
+
+#### inject_proc_mem
+
+```cpp
+vh::Result<RemoteHandle> inject_ex::inject_proc_mem(
+    uint32_t pid, std::string_view so_path);
+```
+
+Injects dlopen shellcode by writing directly to `/proc/<pid>/mem`. No ptrace needed on permissive kernel configs.
+
+---
+
+### macOS injection functions
+
+#### inject_task_for_pid
+
+```cpp
+vh::Result<RemoteHandle> inject_ex::inject_task_for_pid(
+    uint32_t pid, std::span<const uint8_t> shellcode);
+```
+
+`task_for_pid` + `mach_vm_write` + `thread_create_running`. Requires `com.apple.security.cs.debugger` entitlement or SIP disabled.
+
+#### inject_dyld_insert
+
+```cpp
+vh::Result<RemoteHandle> inject_ex::inject_dyld_insert(
+    std::wstring_view target_exe, std::string_view dylib_path);
+```
+
+Spawns the target with `DYLD_INSERT_LIBRARIES` set. macOS only.
+
+---
+
+### Android injection
+
+#### inject_android_ptrace
+
+```cpp
+vh::Result<RemoteHandle> inject_ex::inject_android_ptrace(
+    uint32_t pid, std::string_view so_path);
+```
+
+ptrace + dlopen via linker namespace. Requires root or debuggable target. SELinux context matters.
+
+---
+
+### Enhanced injection (Windows)
+
+#### inject_reflective_v2
+
+```cpp
+vh::Result<RemoteHandle> inject_ex::inject_reflective_v2(
+    uint32_t pid, std::span<const uint8_t> pe_bytes,
+    vanhooks::ReflectiveV2Options opts = {});
+```
+
+Enhanced reflective DLL injection with TLS callback support, exception directory registration, and delay-import resolution.
+
+**ReflectiveV2Options:**
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `resolve_tls` | `bool` | `true` | Process TLS callbacks |
+| `resolve_exceptions` | `bool` | `true` | Register exception tables |
+| `resolve_delay_imports` | `bool` | `true` | Resolve delay-loaded DLLs |
+
+#### inject_manual_map_v2
+
+```cpp
+vh::Result<RemoteHandle> inject_ex::inject_manual_map_v2(
+    uint32_t pid, std::span<const uint8_t> pe_bytes,
+    vanhooks::ManualMapV2Options opts = {});
+```
+
+Full PE loader v2: SEH exception tables, TLS callbacks, static CRT initializers, delay-import resolution, and API set redirection.
+
+**ManualMapV2Options:**
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `resolve_seh` | `bool` | `true` | Register structured exception handlers |
+| `resolve_tls` | `bool` | `true` | Process TLS callbacks |
+| `run_crt_init` | `bool` | `true` | Execute static CRT initializers |
+| `resolve_delay_imports` | `bool` | `true` | Resolve delay-loaded DLLs |
+| `resolve_api_sets` | `bool` | `true` | Follow ApiSetSchema redirection |
+
+---
+
+### Unified dispatcher update
+
+`InjectMethodEx` now has 33 values (0–32). Phase 23 adds:
+
+| Value | Name | Platform |
+|---|---|---|
+| 24 | `Ptrace` | Linux |
+| 25 | `ProcessVmWritev` | Linux |
+| 26 | `LdPreload` | Linux |
+| 27 | `ProcMem` | Linux |
+| 28 | `TaskForPid` | macOS |
+| 29 | `DyldInsert` | macOS |
+| 30 | `AndroidPtrace` | Android |
+| 31 | `ReflectiveV2` | Windows |
+| 32 | `ManualMapV2` | Windows |
+
+`InjectRequest` gains a `so_path` field (`std::string_view`) for POSIX shared-object paths.
+
+---
+
+### Error codes (Phase 23)
+
+| Code | Value | Description |
+|---|---|---|
+| `InjectRecommendFailed` | 1200 | Recommendation engine failure |
+| `ShellcodeGenFailed` | 1201 | Shellcode generation failed |
+| `PtraceFailed` | 1202 | ptrace attach/write failed |
+| `ProcessVmWriteFailed` | 1203 | process_vm_writev failed |
+| `TaskForPidFailed` | 1204 | task_for_pid denied |
+| `ManualMapV2Failed` | 1205 | PE loader v2 failure |
+| `ReflectiveV2Failed` | 1206 | Reflective v2 failure |
+
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
+
+## ⚡ Part XVIII — Advanced Hook Techniques
+
+Phase 24 adds five new hook primitives for specialised use cases: relay hooks, copy-on-write hooks, signal-based hooks, exception-port hooks, and JIT hooks.
+
+---
+
+### hook_relay
+
+```cpp
+Result<HookHandle> Engine::hook_relay(
+    void* target, void* detour, void** original_out,
+    RelayOptions opts = {});
+```
+
+Installs a hook using a shared trampoline pool with direct jmp relay. Saves one indirection per call compared to standard trampoline hooks — useful for performance-critical hot paths.
+
+**RelayOptions:**
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `pool_size` | `size_t` | `64` | Relay pool capacity |
+| `thread_safe` | `bool` | `true` | Suspend threads during patch |
+| `tag` | `std::string` | `""` | Human-readable label |
+
+---
+
+### hook_cow
+
+```cpp
+Result<HookHandle> Engine::hook_cow(
+    void* target, void* detour, void** original_out,
+    CowHookOptions opts = {});
+```
+
+Creates a private copy-on-write mapping of the target's code page, patches only the private copy. The original shared mapping is untouched, making the hook invisible to same-process integrity scans that read the original pages.
+
+**Platforms:** Windows (VirtualAlloc + remap), Linux (mmap MAP_PRIVATE).
+
+**CowHookOptions:**
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `thread_safe` | `bool` | `true` | Suspend threads during patch |
+| `tag` | `std::string` | `""` | Human-readable label |
+
+---
+
+### hook_signal
+
+```cpp
+Result<HookHandle> Engine::hook_signal(
+    void* target, MidCallback callback,
+    SignalHookOptions opts = {});
+```
+
+Linux-only signal-based hook. Installs a SIGTRAP/SIGILL handler that dispatches to the user callback — the Linux equivalent of Windows VEH hooking.
+
+**SignalHookOptions:**
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `signal_num` | `int` | `5` (SIGTRAP) | Signal to intercept |
+| `tag` | `std::string` | `""` | Human-readable label |
+
+Returns `Error::Unsupported` on non-Linux platforms.
+
+---
+
+### hook_exception_port
+
+```cpp
+Result<HookHandle> Engine::hook_exception_port(
+    void* target, MidCallback callback,
+    ExceptionPortOptions opts = {});
+```
+
+macOS-only Mach exception port hook. Registers a task-level exception port that catches `EXC_BREAKPOINT` — breakpoint-free hooking equivalent to VEH on Windows.
+
+**ExceptionPortOptions:**
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `port_type` | `uint32_t` | `0` | Exception port type (0 = task-level) |
+| `tag` | `std::string` | `""` | Human-readable label |
+
+Returns `Error::Unsupported` on non-macOS platforms.
+
+---
+
+### hook_jit
+
+```cpp
+Result<HookHandle> Engine::hook_jit(
+    void* target, void* detour, void** original_out,
+    JitHookOptions opts = {});
+```
+
+Hooks dynamically generated code (V8, LuaJIT, .NET JIT). Installs a standard trampoline on the JIT'd code and optionally monitors for JIT recompilation to auto-repatch.
+
+**JitHookOptions:**
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `monitor_interval_ms` | `size_t` | `100` | Polling interval for JIT recompile detection |
+| `auto_repatch` | `bool` | `true` | Re-apply hook when JIT recompiles the target |
+| `tag` | `std::string` | `""` | Human-readable label |
+
+---
+
+### Error codes (Phase 24)
+
+| Code | Value | Description |
+|---|---|---|
+| `RelayPoolExhausted` | 1300 | Relay trampoline pool full |
+| `CowRemapFailed` | 1301 | CoW page remap failed |
+| `SignalInstallFailed` | 1302 | Signal handler registration failed |
+| `ExceptionPortFailed` | 1303 | Mach exception port setup failed |
+| `JitMonitorFailed` | 1304 | JIT code-cache monitor thread failed |
+| `IdtPatchFailed` | 1305 | IDT entry patch failed (ring-0) |
+| `MsrWriteFailed` | 1306 | MSR write failed (ring-0) |
+
+---
+
+### Configuration structs (vh::config) — Phase 24
+
+| Struct | Description |
+|---|---|
+| `Relay` | Shared trampoline pool options |
+| `Cow` | Copy-on-write hook options |
+| `Signal` | Signal-based hook options (Linux) |
+| `Jit` | JIT hook monitoring options |
+
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
+
+## 🔬 Part XIX — Analysis Subsystem v2
+
+Phase 25 extends the analysis pipeline with cross-platform binary format parsers (ELF, Mach-O), control flow graph construction, binary diffing, advanced pattern scanning, string extraction, RTTI recovery, and function boundary detection.
+
+---
+
+### ELF parser
+
+Parse in-memory ELF images (32-bit and 64-bit) without platform-specific headers. All four methods accept a raw ELF image as `std::span<const uint8_t>`.
+
+| Method | Return | Description |
+|---|---|---|
+| `elf_sections(elf_image)` | `Result<std::vector<ElfSection>>` | Parse all section headers |
+| `elf_symbols(elf_image)` | `Result<std::vector<ElfSymbol>>` | Parse symbols from `SHT_SYMTAB` and `SHT_DYNSYM` |
+| `elf_dynamic(elf_image)` | `Result<std::vector<ElfDynEntry>>` | Parse the `SHT_DYNAMIC` section |
+| `elf_relocations(elf_image)` | `Result<std::vector<ElfRelocation>>` | Parse `SHT_RELA` and `SHT_REL` entries |
+
+#### ELF types
+
+```cpp
+struct ElfSection {
+    std::string name;
+    uint32_t    type;         // SHT_PROGBITS, SHT_SYMTAB, …
+    uint64_t    flags;        // SHF_WRITE, SHF_ALLOC, SHF_EXECINSTR, …
+    uint64_t    address;
+    uint64_t    offset;
+    uint64_t    size;
+    uint32_t    link;
+    uint32_t    info;
+    uint64_t    addralign;
+    uint64_t    entsize;
+};
+
+struct ElfSymbol {
+    std::string  name;
+    uint64_t     value;
+    uint64_t     size;
+    uint8_t      bind;         // STB_LOCAL / STB_GLOBAL / STB_WEAK
+    uint8_t      type;         // STT_FUNC / STT_OBJECT / …
+    uint16_t     section_idx;
+};
+
+struct ElfDynEntry {
+    int64_t  tag;              // DT_NEEDED, DT_STRTAB, …
+    uint64_t value;
+};
+
+struct ElfRelocation {
+    uint64_t offset;
+    uint32_t type;
+    uint32_t sym_idx;
+    int64_t  addend;
+};
+```
+
+#### Example — list ELF exported functions
+
+```cpp
+auto img = load_file("target.so");
+auto syms = engine.elf_symbols(img);
+if (syms) {
+    for (auto& s : *syms)
+        if (s.bind == 1 /* STB_GLOBAL */ && s.type == 2 /* STT_FUNC */)
+            printf("  %s @ 0x%llx\n", s.name.c_str(), s.value);
+}
+```
+
+---
+
+### Mach-O parser
+
+Parse in-memory Mach-O images including fat (universal) binaries. The parser handles both 32-bit and 64-bit architectures and performs byte-swap for cross-endian fat headers.
+
+| Method | Return | Description |
+|---|---|---|
+| `macho_fat_slices(macho_image)` | `Result<std::vector<MachOFatSlice>>` | List architecture slices in a fat binary |
+| `macho_sections(macho_image)` | `Result<std::vector<MachOSection>>` | Parse sections from `LC_SEGMENT` / `LC_SEGMENT_64` |
+| `macho_symbols(macho_image)` | `Result<std::vector<MachOSymbol>>` | Parse the symbol table via `LC_SYMTAB` |
+| `macho_load_commands(macho_image)` | `Result<std::vector<MachOLoadCommand>>` | List all load commands with raw data |
+
+#### Mach-O types
+
+```cpp
+struct MachOFatSlice {
+    uint32_t cpu_type;
+    uint32_t cpu_subtype;
+    uint64_t offset;
+    uint64_t size;
+};
+
+struct MachOSection {
+    std::string  segname;      // e.g. "__TEXT"
+    std::string  sectname;     // e.g. "__text"
+    uint64_t     addr;
+    uint64_t     size;
+    uint32_t     offset;
+    uint32_t     flags;
+};
+
+struct MachOSymbol {
+    std::string  name;
+    uint64_t     value;
+    uint8_t      type;
+    uint8_t      sect;
+    int16_t      desc;
+};
+
+struct MachOLoadCommand {
+    uint32_t cmd;              // LC_SEGMENT_64, LC_SYMTAB, …
+    uint32_t size;
+    std::vector<uint8_t> data;
+};
+```
+
+---
+
+### Control flow graph builder
+
+Build a control flow graph from a live function address using the VanHooks disassembler. The builder walks instructions, splits on branches and terminators (return, unconditional jump, INT3), and tracks conditional/unconditional edges.
+
+```cpp
+Result<ControlFlowGraph> build_cfg(void* function_start, CfgBuildOptions opts = {});
+```
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `max_instructions` | `size_t` | 100000 | Instruction decode limit |
+| `follow_calls` | `bool` | false | Recurse into called functions |
+| `tag` | `std::string` | — | User tag |
+
+#### CFG types
+
+```cpp
+struct BasicBlock {
+    uint64_t              start_addr;
+    uint64_t              end_addr;
+    std::vector<uint64_t> successors;
+    std::vector<uint64_t> predecessors;
+    bool                  is_entry;
+    bool                  is_exit;
+};
+
+enum class CfgEdgeKind : uint8_t {
+    Fallthrough, ConditionalTrue, ConditionalFalse,
+    Unconditional, Call, Return, Indirect,
+};
+
+struct CfgEdge {
+    uint64_t    from;
+    uint64_t    to;
+    CfgEdgeKind kind;
+};
+
+struct ControlFlowGraph {
+    std::vector<BasicBlock> blocks;
+    std::vector<CfgEdge>   edges;
+    uint64_t               entry_point;
+};
+```
+
+#### Example — build a function's CFG
+
+```cpp
+auto cfg = engine.build_cfg(reinterpret_cast<void*>(&MyFunc));
+if (cfg) {
+    printf("Blocks: %zu  Edges: %zu\n", cfg->blocks.size(), cfg->edges.size());
+    for (auto& blk : cfg->blocks)
+        if (blk.is_exit) printf("  exit @ 0x%llx\n", blk.start_addr);
+}
+```
+
+---
+
+### Binary diffing
+
+Compare two module images function by function, producing a per-function diff with similarity scores. Uses `detect_functions()` internally for boundary detection and name-based matching.
+
+```cpp
+Result<BinaryDiffResult> binary_diff(
+    std::span<const uint8_t> old_image,
+    std::span<const uint8_t> new_image,
+    BinaryDiffOptions opts = {});
+```
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `similarity_threshold` | `float` | 0.5 | Below this, treat as added/removed |
+| `instruction_level` | `bool` | false | Diff individual instructions |
+| `tag` | `std::string` | — | User tag |
+
+#### Diff types
+
+```cpp
+enum class DiffKind : uint8_t { Identical, Modified, Added, Removed };
+
+struct FunctionDiff {
+    std::string  name;
+    uint64_t     addr_old;
+    uint64_t     addr_new;
+    DiffKind     kind;
+    float        similarity;     // 0.0–1.0 for Modified entries
+};
+
+struct BinaryDiffResult {
+    std::vector<FunctionDiff> functions;
+    size_t total_old, total_new, matched, modified, added, removed;
+};
+```
+
+#### Example — diff two builds
+
+```cpp
+auto v1 = load_file("game_v1.dll");
+auto v2 = load_file("game_v2.dll");
+auto diff = engine.binary_diff(v1, v2, { .similarity_threshold = 0.6f });
+if (diff) {
+    printf("Modified: %zu  Added: %zu  Removed: %zu\n",
+           diff->modified, diff->added, diff->removed);
+}
+```
+
+---
+
+### Pattern scanner v2
+
+Scan a memory region with named wildcard-mask rules. Each `PatternRule` defines a byte sequence and a parallel mask (`0xFF` = exact match, `0x00` = wildcard).
+
+```cpp
+Result<std::vector<PatternMatch>> pattern_scan(
+    void* base, size_t size,
+    std::span<const PatternRule> rules,
+    PatternScanOptions opts = {});
+```
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `max_matches` | `size_t` | 0 (unlimited) | Stop after N total matches |
+| `scan_start` | `uint64_t` | 0 (base) | Region start override |
+| `scan_end` | `uint64_t` | 0 (base+size) | Region end override |
+| `tag` | `std::string` | — | User tag |
+
+#### Pattern types
+
+```cpp
+struct PatternRule {
+    std::string              name;
+    std::vector<uint8_t>     pattern;
+    std::vector<uint8_t>     mask;        // 0xFF = exact, 0x00 = wildcard
+    std::vector<std::string> tags;
+};
+
+struct PatternMatch {
+    uint64_t     address;
+    std::string  rule_name;
+    size_t       length;
+};
+```
+
+#### Example — scan for function prologues
+
+```cpp
+vanhooks::PatternRule rule;
+rule.name    = "push_rbp_sub_rsp";
+rule.pattern = { 0x55, 0x48, 0x83, 0xEC, 0x00 };
+rule.mask    = { 0xFF, 0xFF, 0xFF, 0xFF, 0x00 };
+
+auto hits = engine.pattern_scan(base, size, {{ rule }});
+if (hits)
+    for (auto& m : *hits) printf("  %s @ 0x%llx\n", m.rule_name.c_str(), m.address);
+```
+
+---
+
+### String scanner
+
+Extract readable strings from a memory region, supporting ASCII and UTF-16LE encodings.
+
+```cpp
+Result<std::vector<ExtractedString>> string_scan(
+    void* base, size_t size,
+    StringScanOptions opts = {});
+```
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `min_length` | `size_t` | 4 | Minimum string length |
+| `max_length` | `size_t` | 4096 | Maximum string length |
+| `include_utf16` | `bool` | true | Also scan for UTF-16LE strings |
+| `tag` | `std::string` | — | User tag |
+
+#### String types
+
+```cpp
+enum class StringEncoding : uint8_t { Ascii, Utf8, Utf16LE, Utf16BE };
+
+struct ExtractedString {
+    uint64_t        address;
+    std::string     value;
+    StringEncoding  encoding;
+    size_t          byte_len;
+    std::string     section;
+};
+```
+
+---
+
+### RTTI recovery
+
+Scan a module for MSVC Run-Time Type Information class descriptors. On Windows, searches `.rdata` and `.data` PE sections for the `".?AV"` MSVC type descriptor pattern and recovers class names, vtable addresses, and base class lists.
+
+```cpp
+Result<std::vector<RttiClassInfo>> rtti_scan(void* module_base);
+```
+
+> **Platform:** Windows only. Returns `Error::Unsupported` on POSIX.
+
+#### RTTI types
+
+```cpp
+struct RttiClassInfo {
+    std::string              name;
+    uint64_t                 vtable_addr;
+    uint64_t                 rtti_addr;
+    std::vector<std::string> base_classes;
+    size_t                   vtable_slots;
+};
+```
+
+#### Example — dump RTTI from a loaded DLL
+
+```cpp
+HMODULE mod = GetModuleHandleA("engine.dll");
+auto classes = engine.rtti_scan(mod);
+if (classes)
+    for (auto& c : *classes)
+        printf("  %s  vtable=0x%llx  slots=%zu\n",
+               c.name.c_str(), c.vtable_addr, c.vtable_slots);
+```
+
+---
+
+### Function boundary detection
+
+Heuristic detection of function start/end addresses using prologue pattern matching (`push rbp` variants, `sub rsp`) and a configurable confidence threshold.
+
+```cpp
+Result<std::vector<FunctionBoundary>> detect_functions(
+    void* base, size_t size,
+    FunctionDetectOptions opts = {});
+```
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `max_functions` | `size_t` | 0 (unlimited) | Limit detected functions |
+| `min_confidence` | `float` | 0.5 | Discard below this threshold |
+| `tag` | `std::string` | — | User tag |
+
+#### Function boundary types
+
+```cpp
+struct FunctionBoundary {
+    uint64_t    start;
+    uint64_t    end;
+    std::string name;              // symbol name if available
+    bool        has_symbol;
+    float       confidence;        // 0.0–1.0 heuristic confidence
+};
+```
+
+---
+
+### Error codes — Phase 25
+
+| Name | Code | Description |
+|---|---|---|
+| `ElfInvalidHeader` | 1400 | Not a valid ELF file |
+| `ElfNoSymtab` | 1401 | No symbol table section |
+| `ElfNoDynamic` | 1402 | No dynamic section |
+| `MachOInvalidHeader` | 1403 | Not a valid Mach-O file |
+| `MachOFatSliceNotFound` | 1404 | Requested arch not in fat binary |
+| `MachOCodeSigInvalid` | 1405 | Code signature validation failed |
+| `CfgBuildFailed` | 1406 | CFG construction failed |
+| `BinaryDiffFailed` | 1407 | Binary diffing failed |
+| `PatternCompileFailed` | 1408 | Pattern rule compilation failed |
+| `RttiNotFound` | 1409 | No RTTI data found |
+| `FunctionBoundaryFailed` | 1410 | Function boundary detection failed |
+
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
+
+## 🌐 Part XX — Network Layer v2
+
+Phase 26 extends the network subsystem with packet timing normalisation, DNS fingerprint awareness, TLS JA3/JA4 fingerprinting, traffic replay, inline packet interception, certificate pinning detection, and a Winsock hook layer.
+
+> **Compile-time gate:** all network methods require `VH_NET_ENABLED` at build time. Without it, calls return `Error::Unsupported`.
+
+---
+
+### Packet timing normalisation
+
+Add controlled jitter to outgoing network responses to defeat timing-based anti-cheat profiling.
+
+```cpp
+Result<void> net_set_packet_timing(PacketTimingConfig config);
+```
+
+#### Config
+
+```cpp
+struct PacketTimingConfig {
+    double   jitter_ms_min = 0.0;    // minimum added delay (ms)
+    double   jitter_ms_max = 5.0;    // maximum added delay (ms)
+    bool     enabled       = true;
+    std::string tag;
+};
+```
+
+---
+
+### DNS fingerprinting
+
+Scan network interfaces for DNS queries, identifying anti-cheat canary domains used for client presence verification.
+
+```cpp
+Result<std::vector<DnsFingerprint>> net_dns_fingerprint(
+    std::string_view interface_name,
+    uint32_t timeout_ms = 5000);
+```
+
+#### DNS types
+
+```cpp
+struct DnsFingerprint {
+    std::string  domain;
+    std::string  record_type;     // A, AAAA, CNAME, TXT
+    uint64_t     ttl;
+    bool         is_canary;       // likely AC check domain
+    std::string  response;
+};
+```
+
+---
+
+### TLS fingerprinting
+
+Capture JA3 and JA4 fingerprints from TLS Client Hello messages on the wire, useful for identifying which libraries or processes establish connections.
+
+```cpp
+Result<std::vector<TlsFingerprint>> net_tls_fingerprint(
+    std::string_view interface_name,
+    uint32_t timeout_ms = 5000);
+```
+
+#### TLS types
+
+```cpp
+struct TlsFingerprint {
+    std::string  ja3_hash;
+    std::string  ja4_hash;
+    std::string  server_name;      // SNI
+    uint16_t     tls_version;
+    std::vector<uint16_t> cipher_suites;
+};
+```
+
+#### Example — TLS fingerprint audit
+
+```cpp
+auto fps = engine.net_tls_fingerprint("eth0", 10000);
+if (fps)
+    for (auto& fp : *fps)
+        printf("  SNI=%s  JA3=%s  JA4=%s\n",
+               fp.server_name.c_str(), fp.ja3_hash.c_str(), fp.ja4_hash.c_str());
+```
+
+---
+
+### Traffic replay
+
+Replay a pcapng capture file on the network with configurable timing.
+
+```cpp
+Result<void> net_replay(
+    std::string_view pcapng_path,
+    ReplayOptions opts = {});
+```
+
+#### Replay options
+
+```cpp
+enum class ReplayMode : uint8_t {
+    Realtime,       // replay at original timing
+    FastForward,    // replay as fast as possible
+    StepByStep,     // replay one packet at a time
+};
+
+struct ReplayOptions {
+    ReplayMode   mode       = ReplayMode::Realtime;
+    double       speed_mult = 1.0;     // for Realtime mode
+    std::string  filter;               // BPF filter
+    std::string  tag;
+};
+```
+
+---
+
+### Packet interception
+
+Register inline packet modification rules using WinDivert (Windows) or nfqueue (Linux) for real-time traffic inspection and modification.
+
+```cpp
+Result<uint64_t> net_intercept_add(InterceptRule rule);
+Result<void>     net_intercept_remove(uint64_t rule_id);
+```
+
+#### Intercept types
+
+```cpp
+struct InterceptRule {
+    std::string  filter;       // BPF/WinDivert filter expression
+    bool         drop;         // drop matching packets
+    bool         modify;       // allow modification callback
+    std::string  tag;
+};
+```
+
+`net_intercept_add` returns a rule ID used to remove the rule later.
+
+---
+
+### Certificate pinning detection
+
+Detect and map certificate pins (SPKI SHA-256) for a given hostname, identifying HPKP headers, embedded pins, and dynamic pin configurations.
+
+```cpp
+Result<std::vector<CertPinInfo>> net_cert_pin_scan(
+    std::string_view hostname);
+```
+
+#### Cert pin types
+
+```cpp
+struct CertPinInfo {
+    std::string  hostname;
+    std::vector<std::string> pin_hashes;   // SPKI SHA-256 pins
+    bool         enforced;
+    std::string  source;       // "header" (HPKP), "embedded", "dynamic"
+};
+```
+
+---
+
+### Winsock hook layer
+
+Install or remove hooks on Winsock (`WSA*`) functions for network monitoring and modification.
+
+> **Platform:** Windows only. Returns `Error::Unsupported` on POSIX.
+
+```cpp
+Result<void> net_winsock_hook(WinsockHookConfig config = {});
+Result<void> net_winsock_unhook();
+```
+
+#### Config
+
+```cpp
+struct WinsockHookConfig {
+    bool     hook_send    = true;
+    bool     hook_recv    = true;
+    bool     hook_connect = true;
+    bool     hook_accept  = true;
+    bool     hook_dns     = true;    // gethostbyname / getaddrinfo
+    std::string tag;
+};
+```
+
+#### Example — monitor Winsock activity
+
+```cpp
+auto result = engine.net_winsock_hook({ .hook_send = true, .hook_recv = true });
+if (result)
+    printf("Winsock hooks installed\n");
+
+// later…
+engine.net_winsock_unhook();
+```
+
+---
+
+### Error codes — Phase 26
+
+| Name | Code | Description |
+|---|---|---|
+| `PacketTimingFailed` | 1500 | Packet timing layer failed |
+| `DnsResolveFailed` | 1501 | DNS fingerprint capture failed |
+| `TlsFingerprintFailed` | 1502 | TLS fingerprint capture failed |
+| `ReplaySyncFailed` | 1503 | Traffic replay synchronisation failed |
+| `InterceptDriverFailed` | 1504 | Packet intercept driver failed |
+| `CertPinDetectFailed` | 1505 | Certificate pin detection failed |
+| `WinsockHookFailed` | 1506 | Winsock hook installation failed |
+
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
+
+## 📡 Part XXI — VanTrace v2
+
+Phase 27 adds structured tracing with multiple output formats, filtering, remote streaming, ETW integration, flame graph export, and IDA/Ghidra annotation export.
+
+> **Compile-time gate:** all trace methods require `VH_TRACE_ENABLED` at build time. Without it, calls return `Error::TraceInitFailed` or the relevant trace error.
+
+---
+
+### Trace initialisation
+
+Start or reconfigure the trace subsystem with a ring buffer and output format.
+
+```cpp
+Result<void> trace_init(TraceConfig config = {});
+Result<void> trace_shutdown();
+```
+
+#### TraceConfig
+
+```cpp
+enum class TraceFormat : uint8_t {
+    Json,        // human-readable JSON lines
+    Binary,      // compact binary format
+    Collapsed,   // collapsed-stack for flame graphs
+};
+
+struct TraceConfig {
+    TraceFormat format         = TraceFormat::Json;
+    bool        include_stacks = true;
+    bool        include_args   = false;    // log hook arguments
+    size_t      buffer_size    = 1 << 20;  // ring buffer bytes (1 MB)
+    std::string output_path;               // file path or empty for in-memory
+    std::string tag;
+};
+```
+
+#### Example — JSON trace to file
+
+```cpp
+engine.trace_init({
+    .format      = vanhooks::TraceFormat::Json,
+    .buffer_size = 4 << 20,  // 4 MB ring buffer
+    .output_path = "trace.jsonl"
+});
+// … do work …
+engine.trace_shutdown();
+```
+
+---
+
+### Trace filtering
+
+Apply module/function/address-range filters and call-depth limits to reduce noise.
+
+```cpp
+Result<void> trace_set_filter(TraceFilter filter);
+```
+
+#### TraceFilter
+
+```cpp
+struct TraceFilter {
+    std::vector<std::string> include_modules;    // module name allowlist
+    std::vector<std::string> exclude_modules;    // module name blocklist
+    std::vector<uint64_t>    include_addresses;  // specific function addresses
+    uint32_t                 max_depth = 0;      // 0 = unlimited call depth
+    std::string              tag;
+};
+```
+
+Returns `Error::TraceFilterInvalid` if all filter fields are empty (would capture everything with no filtering).
+
+---
+
+### Remote trace viewer
+
+Stream trace data over TCP or a Windows named pipe for live viewing in an external tool.
+
+```cpp
+Result<void> trace_remote_start(TraceRemoteConfig config = {});
+Result<void> trace_remote_stop();
+```
+
+#### TraceRemoteConfig
+
+```cpp
+struct TraceRemoteConfig {
+    std::string  address    = "127.0.0.1";  // bind address
+    uint16_t     port       = 47700;         // TCP port (0 = named pipe)
+    std::string  pipe_name;                  // Windows named pipe name
+    bool         auto_start = true;
+    std::string  tag;
+};
+```
+
+---
+
+### ETW provider
+
+Register VanHooks as an ETW provider for Windows Performance Analyzer integration.
+
+> **Platform:** Windows only. Returns `Error::Unsupported` on POSIX.
+
+```cpp
+Result<void> trace_etw_register(TraceEtwConfig config = {});
+Result<void> trace_etw_unregister();
+```
+
+#### TraceEtwConfig
+
+```cpp
+struct TraceEtwConfig {
+    std::string  provider_name = "VanHooks-Trace";
+    uint8_t      level         = 4;    // 1=critical … 5=verbose
+    uint64_t     keyword_mask  = 0;    // ETW keyword filter
+    std::string  tag;
+};
+```
+
+---
+
+### Flame graph export
+
+Export collected trace data as collapsed-stack entries for flame graph visualisation tools (e.g. FlameGraph, speedscope).
+
+```cpp
+Result<std::vector<FlameGraphEntry>> trace_flame_export(
+    std::string_view output_path);
+```
+
+#### FlameGraphEntry
+
+```cpp
+struct FlameGraphEntry {
+    std::string  stack;         // semicolon-delimited collapsed stack
+    uint64_t     duration_ns;   // inclusive duration in nanoseconds
+};
+```
+
+#### Example — export flame graph
+
+```cpp
+auto flames = engine.trace_flame_export("flames.txt");
+if (flames)
+    for (auto& f : *flames)
+        printf("%s %llu\n", f.stack.c_str(), f.duration_ns);
+```
+
+---
+
+### Trace-to-IDA/Ghidra export
+
+Export runtime trace data as IDA Python or Ghidra Java annotation scripts, adding comments and colour tags to disassembly.
+
+```cpp
+Result<void> trace_ida_export(TraceIdaExportOptions opts);
+```
+
+#### TraceIdaExportOptions
+
+```cpp
+enum class IdaExportFormat : uint8_t {
+    IdaPython,    // .py script for IDA Pro
+    GhidraJava,   // .java script for Ghidra
+};
+
+struct TraceIdaExportOptions {
+    IdaExportFormat  format       = IdaExportFormat::IdaPython;
+    bool             add_comments = true;
+    bool             add_colors   = true;
+    std::string      output_path;
+    std::string      tag;
+};
+```
+
+#### Example — annotate IDA database
+
+```cpp
+engine.trace_ida_export({
+    .format      = vanhooks::IdaExportFormat::IdaPython,
+    .output_path = "annotate.py"
+});
+// Open IDA → File → Script file → annotate.py
+```
+
+---
+
+### Error codes — Phase 27
+
+| Name | Code | Description |
+|---|---|---|
+| `TraceInitFailed` | 1600 | Trace subsystem initialisation failed |
+| `TraceFilterInvalid` | 1601 | Empty or invalid trace filter |
+| `TraceRemoteBindFailed` | 1602 | Remote viewer bind/listen failed |
+| `TraceEtwRegisterFailed` | 1603 | ETW provider registration failed |
+| `TraceFlameExportFailed` | 1604 | Flame graph export failed |
+| `TraceIdaExportFailed` | 1605 | IDA/Ghidra export failed |
+
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
+
+## 🧪 Part XXII — Test Suite
+
+Phase 28 adds a built-in self-test framework with full hook-kind coverage, hardening tests, stress tests, and per-test execution.
+
+---
+
+### Running the full test suite
+
+Execute all built-in self-tests (hook kinds, hardening, injection) with configurable verbosity, timeout, and parallelism.
+
+```cpp
+Result<TestSuiteResult> test_run(TestRunConfig config = {});
+```
+
+#### TestRunConfig
+
+```cpp
+enum class TestVerbosity : uint8_t {
+    Quiet,      // only failures
+    Summary,    // pass/fail counts
+    Verbose,    // every test case
+};
+
+struct TestRunConfig {
+    TestVerbosity verbosity    = TestVerbosity::Summary;
+    uint32_t      timeout_ms   = 30000;   // per-test timeout
+    bool          stop_on_fail = false;
+    size_t        thread_count = 1;        // parallel test threads
+    std::string   filter;                  // glob filter on test names
+    std::string   tag;
+};
+```
+
+#### TestSuiteResult
+
+```cpp
+enum class TestResult : uint8_t { Pass, Fail, Skip, Timeout };
+
+struct TestCaseResult {
+    std::string  name;
+    TestResult   result;
+    double       elapsed_ms;
+    std::string  message;       // failure/skip reason
+};
+
+struct TestSuiteResult {
+    std::vector<TestCaseResult> cases;
+    size_t  total, passed, failed, skipped;
+    double  elapsed_ms;
+};
+```
+
+#### Example — run all tests
+
+```cpp
+auto suite = engine.test_run({ .verbosity = vanhooks::TestVerbosity::Verbose });
+if (suite) {
+    printf("Results: %zu passed, %zu failed, %zu skipped\n",
+           suite->passed, suite->failed, suite->skipped);
+    for (auto& c : suite->cases)
+        if (c.result == vanhooks::TestResult::Fail)
+            printf("  FAIL: %s — %s\n", c.name.c_str(), c.message.c_str());
+}
+```
+
+---
+
+### Stress testing
+
+Run concurrent hook/unhook operations from multiple threads to detect race conditions and deadlocks.
+
+```cpp
+Result<TestSuiteResult> test_stress(StressTestConfig config = {});
+```
+
+#### StressTestConfig
+
+```cpp
+struct StressTestConfig {
+    size_t   thread_count   = 8;
+    size_t   iterations     = 10000;
+    size_t   chain_depth    = 16;      // max hook chain depth
+    uint32_t timeout_ms     = 60000;
+    std::string tag;
+};
+```
+
+Tests included:
+- `stress_concurrent_hook_unhook` — N threads hooking/unhooking simultaneously
+- `stress_chain_depth` — deep hook chains up to `chain_depth`
+- `stress_batch_queue_saturation` — batch queue flooding
+
+---
+
+### Single test execution
+
+Run one named test case by exact name.
+
+```cpp
+Result<TestCaseResult> test_run_one(std::string_view test_name,
+                                    uint32_t timeout_ms = 30000);
+```
+
+Returns a `TestCaseResult` with `TestResult::Skip` and message `"test not found"` if the name does not match any registered test.
+
+---
+
+### Test listing
+
+Enumerate all available test names for programmatic filtering.
+
+```cpp
+Result<std::vector<std::string>> test_list();
+```
+
+#### Example — list and run filtered tests
+
+```cpp
+auto names = engine.test_list();
+if (names)
+    for (auto& n : *names)
+        printf("  %s\n", n.c_str());
+
+// Run only hook tests
+auto hooks = engine.test_run({ .filter = "hook_" });
+```
+
+---
+
+### Built-in test coverage
+
+The following tests are included in `test_run()`:
+
+| Test name | Category |
+|---|---|
+| `hook_callsite` | Core hook |
+| `hook_hwbp` | Core hook |
+| `hook_iat` | Core hook |
+| `hook_vtable` | Core hook |
+| `hook_mid` | Core hook |
+| `hook_pageguard` | Core hook |
+| `hook_softbp` | Core hook |
+| `hook_eat` | Core hook |
+| `hook_exception` | Core hook |
+| `hook_threadlocal` | Core hook |
+| `hook_tls` | Core hook |
+| `hook_syscall` | Core hook |
+| `hook_nirvana` | Core hook |
+| `hook_plt` | Core hook (Linux/macOS) |
+| `hook_got` | Core hook (Linux/macOS) |
+| `hardening_polymorphic` | Hardening |
+| `hardening_engine_crypt` | Hardening |
+| `hardening_tamper_detect` | Hardening |
+| `hardening_auto_rehook` | Hardening |
+
+---
+
+### Error codes — Phase 28
+
+| Name | Code | Description |
+|---|---|---|
+| `TestHarnessFailed` | 1700 | Test harness initialisation failed |
+| `TestTimeoutExpired` | 1701 | Test exceeded its timeout |
+| `TestAssertionFailed` | 1702 | Test assertion failed |
+
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
+
+## 🔥 Part XXIII — Fuzzing Infrastructure
+
+Phase 29 adds a programmatic fuzzing API with multi-engine support (libFuzzer, AFL++, Honggfuzz), 8 subsystem-specific fuzz targets, corpus management, crash deduplication, and sanitizer runtime detection.
+
+---
+
+### Starting a fuzz session
+
+Launch a fuzzing run against one of the built-in targets.
+
+```cpp
+Result<void> fuzz_start(FuzzConfig config);
+```
+
+#### FuzzConfig
+
+```cpp
+enum class FuzzEngine : uint8_t {
+    LibFuzzer, AflPlusPlus, Honggfuzz,
+};
+
+enum class FuzzTarget : uint8_t {
+    Disasm, Trampoline, PeParser, ElfParser,
+    MachOParser, Injection, PatternScanner, StringScanner,
+};
+
+struct FuzzConfig {
+    FuzzEngine   engine         = FuzzEngine::LibFuzzer;
+    FuzzTarget   target         = FuzzTarget::Disasm;
+    std::string  corpus_dir;                 // seed corpus directory
+    std::string  output_dir;                 // crash/artifact output
+    size_t       max_iterations = 0;         // 0 = unlimited
+    size_t       max_input_size = 4096;
+    uint32_t     timeout_ms     = 10000;     // per-input timeout
+    bool         detect_leaks   = true;
+    std::string  tag;
+};
+```
+
+Returns `Error::FuzzTargetInvalid` if both `corpus_dir` is empty and `max_iterations` is 0.
+
+#### Example — fuzz the disassembler
+
+```cpp
+engine.fuzz_start({
+    .engine     = vanhooks::FuzzEngine::LibFuzzer,
+    .target     = vanhooks::FuzzTarget::Disasm,
+    .corpus_dir = "corpus/disasm",
+    .output_dir = "crashes/disasm",
+});
+```
+
+---
+
+### Stopping a fuzz session
+
+Stop the active fuzz loop and collect all crash artifacts.
+
+```cpp
+Result<std::vector<FuzzCrashInfo>> fuzz_stop();
+```
+
+#### FuzzCrashInfo
+
+```cpp
+struct FuzzCrashInfo {
+    std::string  input_hash;      // SHA-256 of crashing input
+    std::string  target_name;
+    std::string  crash_type;      // "heap-buffer-overflow", "null-deref", …
+    std::string  stack_trace;
+    size_t       input_size = 0;
+    bool         deduplicated = false;
+};
+```
+
+---
+
+### Corpus management
+
+Query statistics and minimise the seed corpus.
+
+```cpp
+Result<CorpusStats> fuzz_corpus_stats();
+Result<CorpusStats> fuzz_corpus_minimise(std::string_view corpus_dir);
+```
+
+#### CorpusStats
+
+```cpp
+struct CorpusStats {
+    size_t  total_inputs;
+    size_t  minimised_count;
+    size_t  total_crashes;
+    size_t  unique_crashes;
+    double  coverage_pct;
+};
+```
+
+Returns `Error::FuzzCorpusLoadFailed` if `corpus_dir` is empty or unreadable.
+
+---
+
+### Sanitizer runtime detection
+
+Check at runtime whether a specific sanitizer is compiled in.
+
+```cpp
+Result<bool> fuzz_sanitizer_available(SanitizerKind kind);
+```
+
+#### SanitizerKind
+
+```cpp
+enum class SanitizerKind : uint8_t {
+    Asan, Ubsan, Msan, Tsan, Lsan,
+};
+```
+
+---
+
+### Listing fuzz targets
+
+```cpp
+Result<std::vector<std::string>> fuzz_list_targets();
+```
+
+Returns: `["disasm", "trampoline", "pe_parser", "elf_parser", "macho_parser", "injection", "pattern_scanner", "string_scanner"]`
+
+---
+
+### Error codes — Phase 29
+
+| Name | Code | Description |
+|---|---|---|
+| `FuzzTargetInvalid` | 1800 | Invalid fuzz target or config |
+| `FuzzCorpusLoadFailed` | 1801 | Corpus directory load failed |
+| `FuzzSanitizerMissing` | 1802 | Required sanitizer not available |
+| `FuzzCrashDetected` | 1803 | Fuzz session detected a crash |
+
+<img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
+
+## ⚙️ Part XXIV — CI/CD Pipeline
+
+Phase 30 adds a programmatic CI/CD API for workflow validation, local job execution across 10 platform configurations, SDK sync checking, release automation, coverage reporting, static analysis, and binary size tracking.
+
+---
+
+### Workflow validation
+
+Validate a GitHub Actions YAML workflow file.
+
+```cpp
+Result<void> ci_validate_workflow(std::string_view workflow_path);
+```
+
+Returns `Error::CiWorkflowInvalid` if the path is empty or the YAML is malformed.
+
+---
+
+### Local job execution
+
+Run a CI build job locally for any platform configuration.
+
+```cpp
+Result<CiJobResult> ci_run_job(CiJobConfig config);
+```
+
+#### CiJobConfig / CiJobResult
+
+```cpp
+enum class CiPlatform : uint8_t {
+    WindowsX64, WindowsX86, WindowsArm64,
+    LinuxX64Gcc, LinuxX64Clang, LinuxArm64,
+    MacOsX64, MacOsArm64,
+    FuzzSmoke, NetEnabled,
+};
+
+struct CiJobConfig {
+    CiPlatform   platform;
+    std::string  build_type  = "Release";
+    bool         net_enabled = false;
+    bool         fuzz_smoke  = false;
+    std::string  tag;
+};
+
+struct CiJobResult {
+    CiPlatform   platform;
+    bool         success;
+    double       elapsed_sec;
+    size_t       warnings;
+    size_t       errors;
+    std::string  log_summary;
+};
+```
+
+---
+
+### SDK sync check
+
+Verify that public headers in the source tree match the SDK copy. Prevents SDK drift.
+
+```cpp
+Result<CiSdkSyncResult> ci_check_sdk_sync();
+```
+
+#### CiSdkSyncResult
+
+```cpp
+struct CiSdkSyncResult {
+    bool                     in_sync;
+    std::vector<std::string> mismatched_headers;
+};
+```
+
+#### Example — check SDK sync
+
+```cpp
+auto sync = engine.ci_check_sdk_sync();
+if (sync && !sync->in_sync) {
+    printf("SDK out of sync! Mismatched:\n");
+    for (auto& h : sync->mismatched_headers)
+        printf("  %s\n", h.c_str());
+}
+```
+
+---
+
+### Release automation
+
+Build a release archive from a version tag, optionally publishing to GitHub Releases.
+
+```cpp
+Result<void> ci_release_build(CiReleaseConfig config);
+```
+
+#### CiReleaseConfig
+
+```cpp
+struct CiReleaseConfig {
+    std::string  version_tag;         // e.g. "v0.2.0"
+    bool         generate_archive = true;
+    bool         publish_release  = false;
+    std::string  tag;
+};
+```
+
+Returns `Error::CiReleaseBuildFailed` if `version_tag` is empty.
+
+---
+
+### Coverage reporting
+
+Run tests with coverage instrumentation and produce a summary.
+
+```cpp
+Result<CiCoverageReport> ci_coverage_report();
+```
+
+#### CiCoverageReport
+
+```cpp
+struct CiCoverageReport {
+    double  line_pct;
+    double  branch_pct;
+    double  function_pct;
+    size_t  lines_covered;
+    size_t  lines_total;
+};
+```
+
+---
+
+### Static analysis
+
+Run a static analyser and collect structured results.
+
+```cpp
+Result<CiStaticAnalysisResult> ci_static_analysis(
+    std::string_view tool_name = "clang-tidy");
+```
+
+#### CiStaticAnalysisResult
+
+```cpp
+struct CiStaticAnalysisResult {
+    size_t       issues_total;
+    size_t       issues_error;
+    size_t       issues_warning;
+    size_t       issues_note;
+    std::string  tool_name;
+};
+```
+
+---
+
+### Binary size tracking
+
+Measure the size of every build output for each platform.
+
+```cpp
+Result<std::vector<CiBinarySizeEntry>> ci_binary_sizes();
+```
+
+#### CiBinarySizeEntry
+
+```cpp
+struct CiBinarySizeEntry {
+    std::string  target_name;     // "vanhooks.lib", "vanhooks.dll"
+    CiPlatform   platform;
+    size_t       size_bytes;
+};
+```
+
+---
+
+### Error codes — Phase 30
+
+| Name | Code | Description |
+|---|---|---|
+| `CiWorkflowInvalid` | 1900 | Workflow YAML is invalid |
+| `CiJobFailed` | 1901 | CI job execution failed |
+| `CiSdkSyncMismatch` | 1902 | SDK headers out of sync |
+| `CiReleaseBuildFailed` | 1903 | Release build failed |
+| `CiCoverageReportFailed` | 1904 | Coverage report generation failed |
+| `CiStaticAnalysisFailed` | 1905 | Static analysis run failed |
+
+---
+
+## 📖 Part XXV — API Documentation
+
+Phase 31 adds a programmatic documentation API for generating API references, querying module/hook/injection documentation, and building error reference guides — all from within the engine.
+
+### `doc_generate`
+
+```cpp
+Result<void> doc_generate(DocGenerateConfig config = {});
+```
+
+Generate API documentation from header doc-comments.
+
+**Config:**
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `format` | `DocFormat` | `Html` | Output format: `Html`, `Markdown`, `Json` |
+| `output_dir` | `string` | `"docs/api"` | Output directory path |
+| `theme` | `string` | `"vanhooks"` | Doxygen theme name |
+| `include_private` | `bool` | `false` | Include private/internal APIs |
+| `include_source` | `bool` | `false` | Include source code snippets |
+
+**Example:**
+
+```cpp
+DocGenerateConfig cfg;
+cfg.format     = DocFormat::Markdown;
+cfg.output_dir = "docs/md";
+auto r = engine.doc_generate(cfg);
+```
+
+### `doc_module_info`
+
+```cpp
+Result<DocModuleInfo> doc_module_info(std::string_view module_name);
+```
+
+Get documentation for a specific module by name.
+
+**Returns:** `DocModuleInfo` with `name`, `category`, `description`, `detects`, `engines`, `functions`.
+
+**Example:**
+
+```cpp
+auto info = engine.doc_module_info("vh::unhook");
+if (info) {
+    // info->category == "vigil"
+    // info->description contains module summary
+}
+```
+
+### `doc_list_modules`
+
+```cpp
+Result<std::vector<DocModuleInfo>> doc_list_modules();
+```
+
+List all documented modules with their categories. Returns entries for: core, hooks, vigil, inject, analysis, net.
+
+### `doc_hook_kinds`
+
+```cpp
+Result<std::vector<HookKindInfo>> doc_hook_kinds();
+```
+
+Returns documentation for all 17 hook kinds, including:
+
+| Field | Description |
+|---|---|
+| `kind` | `HookKindDoc` enum value |
+| `name` | Human-readable name |
+| `description` | What the hook kind does |
+| `when_to_use` | Decision guidance |
+| `performance` | Overhead estimate (ns/call) |
+| `windows` / `linux_` / `macos` | Platform support flags |
+
+**Example:**
+
+```cpp
+auto kinds = engine.doc_hook_kinds();
+for (auto& k : *kinds) {
+    printf("%s: %s (%s)\n", k.name.c_str(), k.when_to_use.c_str(), k.performance.c_str());
+}
+```
+
+### `doc_injection_techniques`
+
+```cpp
+Result<std::vector<InjectionTechniqueInfo>> doc_injection_techniques();
+```
+
+Returns documentation for 25 injection techniques with stealth rankings (1 = most stealthy), platform flags, and prerequisite requirements.
+
+**Example:**
+
+```cpp
+auto techs = engine.doc_injection_techniques();
+// Sort by stealth:
+std::sort(techs->begin(), techs->end(),
+    [](auto& a, auto& b) { return a.stealth_rank < b.stealth_rank; });
+```
+
+### `doc_error_reference`
+
+```cpp
+Result<std::vector<ErrorRefEntry>> doc_error_reference();
+```
+
+Returns structured error documentation with `code`, `name`, `cause`, `troubleshooting`, and `recovery_example` for each error.
+
+### Error codes — Phase 31
+
+| Name | Code | Description |
+|---|---|---|
+| `DocGenerateFailed` | 2000 | Documentation generation failed |
+| `DocModuleNotFound` | 2001 | Requested module not found in registry |
+| `DocOutputPathInvalid` | 2002 | Output path is empty or inaccessible |
+
+---
+
+## 🔧 Part XXVI — SDK Improvements
+
+Phase 32 adds programmatic SDK management: automated header/lib sync, version checking, changelog retrieval, minimal profile builds, and multi-language binding generation (C, Python, Rust, C#).
+
+### `sdk_sync`
+
+```cpp
+Result<SdkSyncReport> sdk_sync(SdkSyncConfig config = {});
+```
+
+Synchronise public headers and compiled libraries from the source tree to the SDK directory.
+
+**Config:**
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `source_include_dir` | `string` | `"include"` | Source header root |
+| `sdk_include_dir` | `string` | `"../VanHooksSDK/include"` | SDK header root |
+| `lib_output_dir` | `string` | `"lib"` | Source lib output |
+| `sdk_lib_dir` | `string` | `"../VanHooksSDK/lib"` | SDK lib output |
+| `copy_libs` | `bool` | `true` | Copy compiled libraries |
+| `copy_headers` | `bool` | `true` | Copy public headers |
+
+**Returns:** `SdkSyncReport` with `headers_copied`, `headers_skipped`, `libs_copied`, `changed_files`.
+
+**Example:**
+
+```cpp
+auto report = engine.sdk_sync();
+if (report) {
+    printf("Synced %zu headers, %zu libs\n", report->headers_copied, report->libs_copied);
+}
+```
+
+### `sdk_version`
+
+```cpp
+Result<SdkVersionInfo> sdk_version();
+```
+
+Returns the SDK version and whether the header version matches the compiled library version.
+
+**Returns:** `SdkVersionInfo` with `major`, `minor`, `patch`, `full_string`, `header_matches_lib`.
+
+### `sdk_changelog`
+
+```cpp
+Result<std::vector<SdkChangelogEntry>> sdk_changelog();
+```
+
+Returns structured changelog entries. Each `SdkChangelogEntry` has `version`, `date`, `added`, `changed`, `removed`, `deprecated` string lists.
+
+### `sdk_build_minimal`
+
+```cpp
+Result<void> sdk_build_minimal(SdkMinimalConfig config = {});
+```
+
+Build a minimal SDK with only the selected module groups.
+
+**Profiles (`SdkProfile`):**
+
+| Profile | Includes |
+|---|---|
+| `Full` | All modules |
+| `Minimal` | Core hooks only |
+| `Analysis` | Core + analysis subsystem |
+| `Stealth` | Core + vigil + stealth pack |
+
+Additional per-module flags: `include_inject`, `include_vigil`, `include_analysis`, `include_net`.
+
+### `sdk_generate_bindings`
+
+```cpp
+Result<BindingGenResult> sdk_generate_bindings(BindingGenConfig config);
+```
+
+Generate language bindings for the VanHooks C API.
+
+**Supported languages (`BindingLang`):** `C`, `Python`, `Rust`, `CSharp`
+
+**Returns:** `BindingGenResult` with `language`, `functions_wrapped`, `types_wrapped`, `generated_files`.
+
+**Example:**
+
+```cpp
+BindingGenConfig cfg;
+cfg.language   = BindingLang::Python;
+cfg.output_dir = "bindings/python";
+auto result = engine.sdk_generate_bindings(cfg);
+// result->generated_files == {"vanhooks.pyi", "vanhooks_bindings.cpp"}
+```
+
+### Error codes — Phase 32
+
+| Name | Code | Description |
+|---|---|---|
+| `SdkSyncFailed` | 2100 | Header/lib sync failed |
+| `SdkVersionMismatch` | 2101 | Header and lib versions do not match |
+| `SdkMinimalBuildFailed` | 2102 | Minimal profile build failed |
+| `SdkBindingGenFailed` | 2103 | Binding generation failed |
+
+---
+
+## 📚 Part XXVII — Examples & Tutorials
+
+Phase 33 adds a programmatic example registry with 7 comprehensive examples, metadata queries, and build integration.
+
+### `example_list`
+
+```cpp
+Result<std::vector<ExampleInfo>> example_list();
+```
+
+Returns metadata for all 7 built-in examples:
+
+| Name | Category | Demonstrates |
+|---|---|---|
+| `quickstart` | core | `hook_trampoline`, `enable`, `remove` |
+| `all_hook_kinds` | core | All 17 HookKind values |
+| `stealth_pipeline` | stealth | `ac_profile`, `unhook`, `peb_mask`, `telemetry`, `callstack_spoof`, `sleep_obf` |
+| `analysis_workflow` | analysis | `pe_exports`, `symbols`, `pattern_scan`, `callstack_capture` |
+| `network_capture` | net | `net_aware`, `net_dns_fingerprint`, `net_tls_fingerprint` |
+| `cross_platform` | cross-platform | `hook_trampoline`, `hook_plt`, `hook_iat`, platform macros |
+| `game_integration` | game-integration | `hook_vtable`, `unhook`, `peb_mask`, `poly::generate`, `shadow::create` |
+
+**`ExampleInfo` fields:** `name`, `title`, `description`, `category`, `source_path`, `demonstrates` (vector of API features).
+
+### `example_get`
+
+```cpp
+Result<ExampleInfo> example_get(std::string_view name);
+```
+
+Get info for a specific example by name.
+
+**Example:**
+
+```cpp
+auto info = engine.example_get("stealth_pipeline");
+if (info) {
+    printf("Example: %s\n", info->title.c_str());
+    printf("Path: %s\n", info->source_path.c_str());
+    for (auto& feat : info->demonstrates)
+        printf("  - %s\n", feat.c_str());
+}
+```
+
+### `example_build`
+
+```cpp
+Result<ExampleBuildResult> example_build(ExampleBuildConfig config);
+```
+
+Build (and optionally run) an example.
+
+**Config:**
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `example_name` | `string` | — | Example to build (required) |
+| `build_dir` | `string` | `"build/examples"` | Output directory |
+| `run_after` | `bool` | `false` | Run the example after building |
+
+**Returns:** `ExampleBuildResult` with `success`, `output_path`, `build_sec`, `log`.
+
+### Error codes — Phase 33
+
+| Name | Code | Description |
+|---|---|---|
+| `ExampleNotFound` | 2200 | Requested example does not exist |
+| `ExampleBuildFailed` | 2201 | Example build failed |
+
+---
+
+## ⚡ Part XXVIII — Performance Pass
+
+Phase 34 adds a micro-benchmark framework with 8 benchmark targets, an arena allocator API for trampoline stubs, and per-module memory footprint tracking.
+
+### `perf_benchmark`
+
+```cpp
+Result<BenchmarkResult> perf_benchmark(BenchmarkConfig config);
+```
+
+Run a specific micro-benchmark.
+
+**Benchmark targets (`BenchmarkTarget`):**
+
+| Target | Measures |
+|---|---|
+| `HookInstall` | Time to install a single hook |
+| `HookDispatch` | Per-call overhead through detour |
+| `HookRemove` | Time to cleanly remove a hook |
+| `BatchInstall` | N hooks in one `apply_queued` cycle |
+| `TrampolineAlloc` | Single trampoline allocation |
+| `ArenaAlloc` | Arena-based bulk allocation |
+| `LockContention` | Concurrent hook lookup latency |
+| `CachePressure` | Hook table traversal under load |
+
+**Config:**
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `target` | `BenchmarkTarget` | — | What to benchmark |
+| `iterations` | `size_t` | `10000` | Number of iterations |
+| `warmup` | `size_t` | `100` | Warmup iterations (excluded) |
+| `threads` | `size_t` | `1` | Thread count for contention tests |
+| `timeout_ms` | `uint32_t` | `30000` | Per-benchmark timeout |
+
+**Returns:** `BenchmarkResult` with `min_ns`, `max_ns`, `avg_ns`, `median_ns`, `p99_ns`, `iterations`, `total_ms`.
+
+**Example:**
+
+```cpp
+BenchmarkConfig cfg;
+cfg.target     = BenchmarkTarget::HookDispatch;
+cfg.iterations = 100000;
+auto r = engine.perf_benchmark(cfg);
+printf("Hook dispatch: avg %.1f ns, p99 %.1f ns\n", r->avg_ns, r->p99_ns);
+```
+
+### `perf_benchmark_all`
+
+```cpp
+Result<std::vector<BenchmarkResult>> perf_benchmark_all(
+    size_t iterations = 10000, uint32_t timeout_ms = 60000);
+```
+
+Run all 8 benchmarks and return a summary vector.
+
+### `perf_memory_footprint`
+
+```cpp
+Result<MemoryFootprint> perf_memory_footprint();
+```
+
+Get the current memory usage of the engine and all modules.
+
+**Returns:** `MemoryFootprint` with `engine_bytes`, `hooks_bytes`, `trampolines_bytes`, `vigil_bytes`, `net_bytes`, `total_bytes`.
+
+### `perf_arena_init` / `perf_arena_stats` / `perf_arena_destroy`
+
+```cpp
+Result<void>       perf_arena_init(ArenaConfig config = {});
+Result<ArenaStats> perf_arena_stats();
+Result<void>       perf_arena_destroy();
+```
+
+Arena allocator for trampoline stubs — reduces VirtualAlloc calls by pre-allocating executable memory blocks.
+
+**ArenaConfig:**
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `initial_size` | `size_t` | `65536` (64 KB) | Initial arena block size |
+| `max_size` | `size_t` | `16777216` (16 MB) | Maximum total arena size |
+| `executable` | `bool` | `true` | Allocate with execute permission |
+| `hint_address` | `void*` | `nullptr` | Prefer allocation near this address |
+
+**ArenaStats:** `allocated_bytes`, `used_bytes`, `free_bytes`, `alloc_count`, `arena_count`.
+
+### Error codes — Phase 34
+
+| Name | Code | Description |
+|---|---|---|
+| `BenchmarkFailed` | 2300 | Benchmark execution failed |
+| `BenchmarkTimeout` | 2301 | Benchmark exceeded timeout |
+| `ArenaAllocFailed` | 2302 | Arena allocation failed |
+
+---
+
+## 🍎 Part XXIX — Phase 39: macOS Deep Support
+
+Phase 39 introduces 5 modules that replace macOS POSIX stubs with real implementations using Mach, dyld, IOKit, and Security framework APIs. Non-macOS platforms compile to safe stubs returning `Error::Unsupported` or empty defaults.
+
+---
+
+### Mach-O Vigil `<vh/vigil/macho_vigil.vh>`
+
+**Namespace:** `vh::macho_vigil`
+
+Enumerates dyld-loaded images, parses Mach-O headers and sections, and detects code signing and `__RESTRICT` segments.
+
+#### Structs
+
+**`DyldImageInfo`:**
+
+| Field | Type | Description |
+|---|---|---|
+| `path` | `std::string` | Full path of the loaded image |
+| `load_address` | `uint64_t` | Base address in memory |
+| `slide` | `uint64_t` | ASLR slide value |
+| `is_system` | `bool` | True for images under /usr/lib or /System |
+
+**`MachOSectionInfo`:**
+
+| Field | Type | Description |
+|---|---|---|
+| `segment` | `std::string` | Segment name (e.g. `__TEXT`) |
+| `section` | `std::string` | Section name (e.g. `__text`) |
+| `address` | `uint64_t` | Section virtual address |
+| `size` | `uint64_t` | Section size in bytes |
+| `flags` | `uint32_t` | Mach-O section flags |
+
+#### Functions
+
+| Signature | Description |
+|---|---|
+| `std::vector<DyldImageInfo> enumerate_dyld_images()` | List all dyld-loaded images |
+| `std::vector<MachOSectionInfo> get_sections(const char* image_path)` | Parse sections of a Mach-O image |
+| `bool is_code_signed(const char* image_path)` | Check if the image has a code signature |
+| `uint32_t get_image_flags(const char* image_path)` | Get Mach-O header flags |
+| `bool has_restrict_segment(const char* image_path)` | Check for `__RESTRICT` segment |
+| `std::vector<std::string> find_kext_loaded_images()` | Find images loaded by kernel extensions |
+
+---
+
+### SIP Awareness `<vh/vigil/sip_aware.vh>`
+
+**Namespace:** `vh::sip_aware`
+
+Queries macOS System Integrity Protection state at runtime via `csr_get_active_config()`.
+
+#### Enums
+
+**`SipStatus`:** `Unknown`, `Enabled`, `Disabled`, `Partial`
+
+#### Structs
+
+**`SipFlags`:** `filesystem_protection`, `kext_signing`, `task_for_pid_restriction`, `debugging_restriction`, `dtrace_restriction`, `nvram_protection`, `apple_internal_reserved` — all `bool`.
+
+#### Functions
+
+| Signature | Description |
+|---|---|
+| `SipStatus query_sip_status()` | Get current SIP status |
+| `SipFlags query_sip_flags()` | Get detailed SIP flag breakdown |
+| `bool can_ptrace_targets()` | Whether ptrace is allowed by SIP |
+| `bool can_task_for_pid()` | Whether `task_for_pid` is available |
+| `bool can_inject_dyld_insert()` | Whether `DYLD_INSERT_LIBRARIES` works |
+| `bool can_load_unsigned_kexts()` | Whether unsigned kexts can load |
+| `bool is_amfi_enforced()` | Whether AMFI is enforcing |
+
+---
+
+### Hardened Runtime `<vh/vigil/hardened_runtime.vh>`
+
+**Namespace:** `vh::hardened_runtime`
+
+Detects macOS Hardened Runtime entitlements and code signing via the `csops()` syscall.
+
+#### Structs
+
+**`EntitlementInfo`:** `allow_jit`, `allow_unsigned_executable_memory`, `allow_dyld_environment_variables`, `disable_library_validation`, `disable_executable_page_protection`, `com_apple_security_cs_debugger` — all `bool`.
+
+**`CodeSignInfo`:**
+
+| Field | Type | Description |
+|---|---|---|
+| `is_signed` | `bool` | Has a code signature |
+| `is_valid` | `bool` | Signature is valid |
+| `hardened_runtime` | `bool` | Hardened Runtime is active |
+| `library_validation` | `bool` | Library validation is enforced |
+| `flags` | `uint32_t` | Raw `csops` flags |
+| `team_id` | `std::string` | Signing team identifier |
+| `signing_id` | `std::string` | Signing identifier |
+
+#### Functions
+
+| Signature | Description |
+|---|---|
+| `CodeSignInfo query_code_signing()` | Query code signing for this process |
+| `CodeSignInfo query_code_signing_for(const char* path)` | Query code signing for an arbitrary binary |
+| `EntitlementInfo query_entitlements()` | Query entitlements for this process |
+| `bool is_hardened_runtime_active()` | Whether Hardened Runtime is enforced |
+| `bool is_library_validation_active()` | Whether Library Validation is enforced |
+| `bool can_execute_jit()` | Whether JIT compilation is allowed |
+| `bool can_modify_executable_pages()` | Whether executable pages can be modified |
+| `bool can_use_dyld_env_vars()` | Whether DYLD environment variables are honoured |
+
+---
+
+### Kext Enumeration `<vh/vigil/kext_enum.vh>`
+
+**Namespace:** `vh::kext_enum`
+
+macOS equivalent of `driver_fence`. Enumerates loaded kexts and System Extensions, identifies known anti-cheat kernel modules.
+
+#### Structs
+
+**`KextInfo`:** `bundle_id`, `version` (string), `load_address`, `size` (uint64), `is_apple`, `is_ac_related` (bool).
+
+**`SystemExtInfo`:** `bundle_id`, `team_id`, `category` (string), `is_active`, `is_ac_related` (bool).
+
+#### Functions
+
+| Signature | Description |
+|---|---|
+| `std::vector<KextInfo> enumerate_kexts()` | List all loaded kernel extensions |
+| `std::vector<SystemExtInfo> enumerate_system_extensions()` | List System Extensions (macOS 11+) |
+| `bool has_ac_kext()` | True if an anti-cheat kext is loaded |
+| `bool has_ac_system_extension()` | True if an AC system extension is active |
+| `std::vector<std::string> get_ac_kext_ids()` | Get bundle IDs of detected AC kexts |
+
+---
+
+### PAC Awareness `<vh/vigil/pac_aware.vh>`
+
+**Namespace:** `vh::pac_aware`
+
+ARM64e Pointer Authentication Code detection and stripping. Reports which hook strategies remain viable under PAC enforcement.
+
+#### Enums
+
+**`PacSupport`:** `Unavailable`, `Available`, `Enforced`
+
+#### Structs
+
+**`PacInfo`:** `data_pac`, `code_pac` (PacSupport), `arm64e`, `kernel_pac` (bool).
+
+#### Functions
+
+| Signature | Description |
+|---|---|
+| `PacInfo query_pac_support()` | Query PAC hardware and enforcement state |
+| `bool is_pac_enforced()` | Whether code PAC is enforced |
+| `std::uintptr_t strip_pac(std::uintptr_t ptr)` | Strip PAC bits from a pointer |
+| `void* strip_pac_ptr(void* ptr)` | Strip PAC from a void pointer |
+| `bool is_pointer_signed(std::uintptr_t ptr)` | Check if upper bits contain a PAC |
+| `bool can_use_trampoline_hooks()` | Trampoline hooks viable under PAC |
+| `bool can_use_got_hooks()` | GOT hooks viable under PAC |
+| `bool can_use_vtable_hooks()` | VTable hooks viable under PAC |
+
+---
+
+## 🐧 Part XXX — Phase 40: Linux Deep Support
+
+Phase 40 introduces 6 modules replacing Linux POSIX stubs with real implementations using /proc, bpf(), Landlock, and MAC system queries. Non-Linux platforms compile to safe stubs.
+
+---
+
+### Linux Vigil `<vh/vigil/linux_vigil.vh>`
+
+**Namespace:** `vh::linux_vigil`
+
+Full Linux process introspection via /proc: module enumeration, memory map parsing, thread listing, TracerPid detection.
+
+#### Structs
+
+**`ModuleInfo`:** `name`, `path` (string), `base`, `end`, `size` (uint64), `is_executable`, `is_shared_object` (bool).
+
+**`MemoryRegion`:** `start`, `end` (uint64), `readable`, `writable`, `executable`, `is_private`, `is_anonymous` (bool), `pathname` (string).
+
+**`ThreadInfo`:** `tid` (uint32), `name` (string), `state` (char), `nice` (int64), `utime`, `stime` (uint64).
+
+#### Functions
+
+| Signature | Description |
+|---|---|
+| `std::vector<ModuleInfo> enumerate_modules()` | List all loaded modules from /proc/self/maps |
+| `std::vector<MemoryRegion> enumerate_memory_regions()` | Full memory map with permissions |
+| `std::vector<ThreadInfo> enumerate_threads()` | List all threads via /proc/self/task |
+| `bool is_being_traced()` | Check TracerPid in /proc/self/status |
+| `bool is_running_as_root()` | UID == 0 |
+| `uint32_t get_parent_pid()` | Read PPid from /proc/self/status |
+| `std::string get_process_name(uint32_t pid)` | Read comm for any PID |
+| `std::string get_exe_path()` | readlink /proc/self/exe |
+| `bool has_capability(int cap)` | Check a Linux capability |
+| `bool is_namespace_sandboxed()` | Compare namespaces with PID 1 |
+
+---
+
+### procfs Vigil `<vh/vigil/procfs_vigil.vh>`
+
+**Namespace:** `vh::procfs_vigil`
+
+Deep /proc introspection: FD enumeration, cgroup inspection, namespace detection, container detection.
+
+#### Structs
+
+**`FdInfo`:** `fd` (int), `path`, `type` (string), `is_socket`, `is_pipe` (bool).
+
+**`CgroupInfo`:** `hierarchy`, `controller`, `path` (string), `is_v2` (bool).
+
+**`NamespaceInfo`:** `type` (string), `inode` (uint64), `is_root` (bool).
+
+**`StatusField`:** `key`, `value` (string).
+
+#### Functions
+
+| Signature | Description |
+|---|---|
+| `std::vector<FdInfo> enumerate_fds(uint32_t pid = 0)` | List open FDs (0 = self) |
+| `std::vector<CgroupInfo> query_cgroups(uint32_t pid = 0)` | Parse cgroup memberships |
+| `std::vector<NamespaceInfo> query_namespaces(uint32_t pid = 0)` | List namespace inodes |
+| `std::vector<StatusField> read_proc_status(uint32_t pid = 0)` | Parse all /proc/pid/status fields |
+| `std::string read_proc_field(const char* field, uint32_t pid = 0)` | Read a single status field |
+| `uint64_t read_proc_mem_value(uint64_t address, uint32_t pid = 0)` | Read a 64-bit value from /proc/pid/mem |
+| `bool is_in_container()` | Heuristic: PID namespace differs from PID 1 |
+| `bool is_in_docker()` | Check /.dockerenv and cgroup patterns |
+| `bool has_proc_access(uint32_t pid)` | Whether /proc/pid is readable |
+
+---
+
+### eBPF Awareness `<vh/vigil/ebpf_aware.vh>`
+
+**Namespace:** `vh::ebpf_aware`
+
+Detects eBPF programs monitoring syscalls, network, and file access via `bpf()` syscall enumeration.
+
+#### Enums
+
+**`BpfProgType`:** `Unknown`, `SocketFilter`, `Kprobe`, `Tracepoint`, `Xdp`, `PerfEvent`, `CgroupSkb`, `CgroupSock`, `LwtIn`, `LwtOut`, `LsmMac`, `Tracing`
+
+#### Structs
+
+**`BpfProgInfo`:** `id` (uint32), `type` (BpfProgType), `name` (string), `run_count` (uint32), `run_time_ns` (uint64), `is_gpl` (bool).
+
+**`BpfMapInfo`:** `id`, `type`, `key_size`, `value_size`, `max_entries` (uint32), `name` (string).
+
+#### Functions
+
+| Signature | Description |
+|---|---|
+| `std::vector<BpfProgInfo> enumerate_bpf_programs()` | List all loaded BPF programs |
+| `std::vector<BpfMapInfo> enumerate_bpf_maps()` | List all BPF maps |
+| `bool has_bpf_monitoring()` | Any tracing/kprobe/tracepoint programs loaded |
+| `bool has_syscall_tracing()` | BPF programs tracing syscalls |
+| `bool has_network_monitoring()` | XDP/socket filter/cgroup programs loaded |
+| `bool has_file_monitoring()` | LSM BPF programs for file access |
+| `bool has_lsm_bpf()` | LSM-MAC BPF programs active |
+| `bool can_load_bpf()` | Whether this process can load BPF programs |
+
+---
+
+### Landlock Awareness `<vh/vigil/landlock_aware.vh>`
+
+**Namespace:** `vh::landlock_aware`
+
+Detects Landlock LSM (Linux 5.13+) restrictions on file and network access.
+
+#### Enums
+
+**`LandlockStatus`:** `Unavailable`, `Available`, `Active`
+
+#### Structs
+
+**`LandlockInfo`:** `status` (LandlockStatus), `abi_version` (uint32), `fs_restrictions`, `net_restrictions` (bool).
+
+#### Functions
+
+| Signature | Description |
+|---|---|
+| `LandlockInfo query_landlock()` | Full Landlock status query |
+| `bool is_landlock_available()` | Whether the kernel supports Landlock |
+| `bool is_landlock_active()` | Whether this process has Landlock rules |
+| `uint32_t get_abi_version()` | Landlock ABI version (0 = unavailable) |
+| `bool has_fs_restrictions()` | File system access restrictions active |
+| `bool has_net_restrictions()` | Network restrictions active (ABI v4+) |
+| `bool can_write_path(const char* path)` | Test write access to a path |
+| `bool can_read_path(const char* path)` | Test read access to a path |
+
+---
+
+### Proton/Wine Awareness `<vh/vigil/proton_aware.vh>`
+
+**Namespace:** `vh::proton_aware`
+
+Detects Wine, Proton, and CrossOver translation layers. On Windows (under Wine) it queries ntdll for `wine_get_version`; on Linux it reads Steam runtime environment variables.
+
+#### Enums
+
+**`WineLayer`:** `None`, `Wine`, `Proton`, `CrossOver`
+
+#### Structs
+
+**`WineInfo`:** `layer` (WineLayer), `version`, `host_os` (string), `is_wow64`, `has_esync`, `has_fsync`, `has_ntsync` (bool).
+
+#### Functions
+
+| Signature | Description |
+|---|---|
+| `WineInfo query_wine_environment()` | Full Wine/Proton environment query |
+| `bool is_wine()` | Running under Wine |
+| `bool is_proton()` | Running under Proton specifically |
+| `WineLayer get_wine_layer()` | Which translation layer is active |
+| `std::string get_wine_version()` | Wine version string |
+| `bool has_native_wayland()` | Native Wayland support in Wine |
+| `bool has_native_vulkan()` | Wine Vulkan ICD present |
+| `bool is_syscall_emulated(const char* dll, const char* func)` | Whether a specific syscall is translated |
+| `bool should_use_native_hooks()` | Prefer native (Linux) hooks |
+| `bool should_use_windows_hooks()` | Prefer Windows API hooks |
+
+---
+
+### SELinux/AppArmor Awareness `<vh/vigil/selinux_aware.vh>`
+
+**Namespace:** `vh::selinux_aware`
+
+Detects mandatory access control policies (SELinux and AppArmor) and determines how they constrain hooking operations.
+
+#### Enums
+
+**`MacSystem`:** `None`, `SELinux`, `AppArmor`, `Both`
+
+**`EnforcementMode`:** `Disabled`, `Permissive`, `Enforcing`
+
+#### Structs
+
+**`MacInfo`:** `system` (MacSystem), `selinux`, `apparmor` (EnforcementMode), `selinux_context`, `apparmor_profile` (string).
+
+#### Functions
+
+| Signature | Description |
+|---|---|
+| `MacInfo query_mac()` | Full MAC system query |
+| `MacSystem get_active_mac()` | Which MAC system is active |
+| `EnforcementMode get_selinux_mode()` | SELinux enforcement mode |
+| `std::string get_selinux_context()` | Current SELinux context |
+| `EnforcementMode get_apparmor_mode()` | AppArmor enforcement mode |
+| `std::string get_apparmor_profile()` | Current AppArmor profile |
+| `bool can_ptrace()` | Whether MAC allows ptrace |
+| `bool can_mmap_exec()` | Whether MAC allows PROT_EXEC mmap |
+| `bool can_modify_proc()` | Whether /proc modifications are allowed |
+| `bool is_confined()` | Whether this process is confined by MAC |
+
+---
+
+## 📱 Part XXXI — Phase 41: Mobile Support
+
+Phase 41 introduces 4 modules for Android ARM64 hooking and injection, Android anti-cheat detection, and iOS research. Non-mobile platforms compile to safe stubs returning `Error::Unsupported`.
+
+---
+
+### Android ARM64 Hooking `<vh/vigil/android_hook.vh>`
+
+**Namespace:** `vh::android_hook`
+
+Inline hooks for native NDK libraries using ARM64 LDR X17/BR X17 trampolines, PLT/GOT hook stubs, and ART method resolution.
+
+#### Enums
+
+**`HookType`:** `InlineNative`, `ArtMethod`, `PltGot`
+
+#### Structs
+
+**`NativeHookInfo`:** `library`, `symbol` (string), `target`, `detour`, `original` (uintptr_t), `type` (HookType), `active` (bool).
+
+**`ArtMethodInfo`:** `class_name`, `method_name`, `signature` (string), `art_method_ptr`, `entry_point` (uintptr_t).
+
+#### Functions
+
+| Signature | Description |
+|---|---|
+| `Result<NativeHookInfo> hook_native(const char* library, const char* symbol, void* detour)` | Install an inline hook on a native symbol |
+| `Result<void> unhook_native(const NativeHookInfo& info)` | Remove a previously installed hook |
+| `Result<NativeHookInfo> hook_plt(const char* caller_lib, const char* target_lib, const char* symbol, void* detour)` | Install a PLT/GOT hook |
+| `Result<ArtMethodInfo> resolve_art_method(const char* class_name, const char* method_name, const char* signature)` | Resolve an ART method pointer |
+| `Result<void> hook_art_method(const ArtMethodInfo& method, uintptr_t replacement)` | Replace an ART method's entry point |
+| `bool is_art_runtime()` | Whether libart.so is loaded |
+| `std::string get_art_version()` | ART runtime version string |
+| `std::vector<std::string> enumerate_native_libraries()` | List all native .so files from /proc/self/maps |
+
+---
+
+### Android Injection `<vh/vigil/android_inject.vh>`
+
+**Namespace:** `vh::android_inject`
+
+Multiple injection vectors for loading native libraries into Android processes: ptrace + dlopen, /proc/pid/mem, Zygote hooking, linker namespace manipulation.
+
+#### Enums
+
+**`InjectionMethod`:** `ZygoteHook`, `PtraceDlopen`, `ProcMem`, `LinkerNamespace`
+
+#### Structs
+
+**`InjectionResult`:** `method` (InjectionMethod), `base` (uintptr_t), `library_path` (string), `success` (bool).
+
+#### Functions
+
+| Signature | Description |
+|---|---|
+| `Result<InjectionResult> inject_library(uint32_t pid, const char* library_path, InjectionMethod method)` | Inject a library using a specific method |
+| `Result<InjectionResult> inject_library_auto(uint32_t pid, const char* library_path)` | Auto-select the best injection method |
+| `bool can_ptrace_pid(uint32_t pid)` | Whether ptrace is possible for the target |
+| `bool can_access_proc_mem(uint32_t pid)` | Whether /proc/pid/mem is accessible |
+| `bool is_zygote_available()` | Whether the Zygote socket is present |
+| `bool has_root()` | Running as root or su binary present |
+| `bool has_magisk()` | Magisk root manager detected |
+| `bool has_kernelsu()` | KernelSU detected |
+| `std::string get_linker_namespace(uint32_t pid)` | Get linker namespace info for a PID |
+
+---
+
+### Android Anti-Cheat Awareness `<vh/vigil/android_ac_aware.vh>`
+
+**Namespace:** `vh::android_ac_aware`
+
+Detects SafetyNet / Play Integrity, root hiding, known AC modules (GameGuard, EAC, BattlEye), Frida, Xposed, and emulator heuristics.
+
+#### Enums
+
+**`IntegrityLevel`:** `Unknown`, `NoIntegrity`, `BasicDevice`, `DeviceCts`, `StrongDevice`
+
+#### Structs
+
+**`SafetyNetInfo`:** `available`, `cts_profile_match`, `basic_integrity` (bool), `level` (IntegrityLevel).
+
+**`RootDetectionInfo`:** `su_binary`, `magisk_detected`, `kernelsu_detected`, `busybox_present`, `test_keys`, `selinux_permissive`, `props_modified` — all `bool`.
+
+**`AcModuleInfo`:** `name`, `package`, `native_lib` (string), `detected` (bool).
+
+#### Functions
+
+| Signature | Description |
+|---|---|
+| `SafetyNetInfo query_safety_net()` | Query SafetyNet / Play Integrity availability |
+| `RootDetectionInfo query_root_detection()` | Comprehensive root detection scan |
+| `std::vector<AcModuleInfo> detect_ac_modules()` | Detect known anti-cheat native libraries |
+| `bool is_play_integrity_active()` | Play Integrity service detected |
+| `bool is_root_hidden()` | Root present but hidden (Magisk Hide etc.) |
+| `bool is_frida_detected()` | Frida agent or server detected |
+| `bool is_xposed_present()` | Xposed framework loaded |
+| `bool has_tampered_signature()` | APK signature differs from expected |
+| `bool is_debuggable()` | ro.debuggable is set |
+| `bool is_emulator()` | Running on an emulator |
+
+---
+
+### iOS Research `<vh/vigil/ios_research.vh>`
+
+**Namespace:** `vh::ios_research`
+
+Research-phase module for jailbroken iOS. Detects jailbreak type (Substrate, Substitute, Ellekit, Dopamine), provides Objective-C runtime introspection, and handles PAC stripping on A12+.
+
+#### Enums
+
+**`JailbreakType`:** `None`, `Substrate`, `Substitute`, `Ellekit`, `Dopamine`, `Unknown`
+
+#### Structs
+
+**`JailbreakInfo`:** `type` (JailbreakType), `version` (string), `has_tfp0`, `has_pac_bypass`, `rootless` (bool).
+
+**`ObjcMethodInfo`:** `class_name`, `selector` (string), `imp` (uintptr_t), `is_class_method` (bool).
+
+#### Functions
+
+| Signature | Description |
+|---|---|
+| `JailbreakInfo detect_jailbreak()` | Detect jailbreak type and capabilities |
+| `bool is_jailbroken()` | Whether the device is jailbroken |
+| `bool has_substrate()` | MobileSubstrate loaded |
+| `bool has_substitute()` | Substitute loaded |
+| `bool has_ellekit()` | ElleKit loaded |
+| `bool can_hook_objc()` | ObjC hooking is viable |
+| `Result<ObjcMethodInfo> resolve_objc_method(const char* class_name, const char* selector)` | Resolve an ObjC method IMP |
+| `std::vector<std::string> enumerate_loaded_classes()` | List all loaded ObjC classes |
+| `bool has_pac_on_device()` | Device has PAC hardware (A12+) |
+| `std::uintptr_t strip_pac_ios(std::uintptr_t ptr)` | Strip PAC bits from a pointer |
 
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
 

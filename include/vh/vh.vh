@@ -94,6 +94,146 @@
 #  include "inject/inject_unified.vh"
 #endif
 
+// ── Anti-cheat awareness (Phase 11) ─────────────────────────────────────────
+#ifdef VH_AC_PROFILE_ENABLED
+#  include "vigil/ac_profile.vh"
+#endif
+#ifdef VH_AC_HEARTBEAT_ENABLED
+#  include "vigil/ac_heartbeat.vh"
+#endif
+#ifdef VH_DRIVER_FENCE_ENABLED
+#  include "vigil/driver_fence.vh"
+#endif
+#ifdef VH_MEM_CLOAK_ENABLED
+#  include "vigil/mem_cloak.vh"
+#endif
+
+// ── Environment awareness (Phase 12) ────────────────────────────────────────
+#ifdef VH_HWID_AWARE_ENABLED
+#  include "vigil/hwid_aware.vh"
+#endif
+#ifdef VH_REGISTRY_FENCE_ENABLED
+#  include "vigil/registry_fence.vh"
+#endif
+#ifdef VH_WMI_FENCE_ENABLED
+#  include "vigil/wmi_fence.vh"
+#endif
+#ifdef VH_HYPERVISOR_AWARE_ENABLED
+#  include "vigil/hypervisor_aware.vh"
+#endif
+
+// ── Network-level awareness (Phase 13) ─────────────────────────────────────
+#ifdef VH_NET_AWARE_ENABLED
+#  include "vigil/net_aware.vh"
+#endif
+#ifdef VH_SCREENSHOT_FENCE_ENABLED
+#  include "vigil/screenshot_fence.vh"
+#endif
+#ifdef VH_WINDOW_FENCE_ENABLED
+#  include "vigil/window_fence.vh"
+#endif
+#ifdef VH_PROCESS_FENCE_ENABLED
+#  include "vigil/process_fence.vh"
+#endif
+
+// ── Deep detection surface (Phase 14) ──────────────────────────────────────
+#ifdef VH_THREAD_FENCE_ENABLED
+#  include "vigil/thread_fence.vh"
+#endif
+#ifdef VH_FILE_FENCE_ENABLED
+#  include "vigil/file_fence.vh"
+#endif
+#ifdef VH_HANDLE_FENCE_ENABLED
+#  include "vigil/handle_fence.vh"
+#endif
+#ifdef VH_TIMING_FENCE_ENABLED
+#  include "vigil/timing_fence.vh"
+#endif
+
+// ── Integrity & input surface (Phase 15) ───────────────────────────────────
+#ifdef VH_MODULE_INTEGRITY_ENABLED
+#  include "vigil/module_integrity.vh"
+#endif
+#ifdef VH_STACK_FENCE_ENABLED
+#  include "vigil/stack_fence.vh"
+#endif
+#ifdef VH_CERT_FENCE_ENABLED
+#  include "vigil/cert_fence.vh"
+#endif
+#ifdef VH_INPUT_FENCE_ENABLED
+#  include "vigil/input_fence.vh"
+#endif
+
+// ── Communication & exception surface (Phase 16) ──────────────────────────
+#ifdef VH_EXCEPTION_FENCE_ENABLED
+#  include "vigil/exception_fence.vh"
+#endif
+#ifdef VH_COMM_FENCE_ENABLED
+#  include "vigil/comm_fence.vh"
+#endif
+#ifdef VH_OVERLAY_FENCE_ENABLED
+#  include "vigil/overlay_fence.vh"
+#endif
+#ifdef VH_SYSCALL_FENCE_ENABLED
+#  include "vigil/syscall_fence.vh"
+#endif
+
+// ── Memory & allocation surface (Phase 17) ─────────────────────────────────
+#ifdef VH_VAD_FENCE_ENABLED
+#  include "vigil/vad_fence.vh"
+#endif
+#ifdef VH_HEAP_FENCE_ENABLED
+#  include "vigil/heap_fence.vh"
+#endif
+#ifdef VH_PATTERN_FENCE_ENABLED
+#  include "vigil/pattern_fence.vh"
+#endif
+#ifdef VH_WORKINGSET_FENCE_ENABLED
+#  include "vigil/workingset_fence.vh"
+#endif
+
+// ── Behavioral & telemetry surface (Phase 18) ─────────────────────────────
+#ifdef VH_TELEMETRY_FENCE_ENABLED
+#  include "vigil/telemetry_fence.vh"
+#endif
+#ifdef VH_AIM_FENCE_ENABLED
+#  include "vigil/aim_fence.vh"
+#endif
+#ifdef VH_REPLAY_FENCE_ENABLED
+#  include "vigil/replay_fence.vh"
+#endif
+#ifdef VH_SCREENSHOT_INTEGRITY_ENABLED
+#  include "vigil/screenshot_integrity.vh"
+#endif
+
+// ── Kernel callback surface (Phase 19) ────────────────────────────────────
+#ifdef VH_CALLBACK_FENCE_ENABLED
+#  include "vigil/callback_fence.vh"
+#endif
+#ifdef VH_MINIFILTER_FENCE_ENABLED
+#  include "vigil/minifilter_fence.vh"
+#endif
+#ifdef VH_OBJECT_CALLBACK_FENCE_ENABLED
+#  include "vigil/object_callback_fence.vh"
+#endif
+#ifdef VH_REGISTRY_CALLBACK_FENCE_ENABLED
+#  include "vigil/registry_callback_fence.vh"
+#endif
+
+// ── Hardware & DMA surface (Phase 20) ─────────────────────────────────────
+#ifdef VH_DMA_FENCE_ENABLED
+#  include "vigil/dma_fence.vh"
+#endif
+#ifdef VH_HYPERVISOR_FENCE_ENABLED
+#  include "vigil/hypervisor_fence.vh"
+#endif
+#ifdef VH_FIRMWARE_FENCE_ENABLED
+#  include "vigil/firmware_fence.vh"
+#endif
+#ifdef VH_HARDWARE_FENCE_ENABLED
+#  include "vigil/hardware_fence.vh"
+#endif
+
 #include <vanhooks/vanhooks.vh>
 
 #include <string_view>
