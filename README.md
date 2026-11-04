@@ -339,8 +339,6 @@ base.remove();
 
 ## ⚡ Hook Engine v2
 
-Phase 21 introduces advanced hook primitives that build on the existing hook types.
-
 ### Conditional hooks
 
 A hook that fires only when a predicate returns true — zero-overhead skip when false.
@@ -402,8 +400,6 @@ engine.set_priority(h, 100);
 
 ## 🌍 Cross-Platform Hook Parity
 
-Phase 22 extends hook coverage to macOS and Linux-specific mechanisms.
-
 | Hook | Platform | API |
 |---|---|---|
 | **dyld interpose** | macOS | `engine.hook_dyld_interpose(detour, { .original_symbol = "malloc" })` |
@@ -414,8 +410,6 @@ Phase 22 extends hook coverage to macOS and Linux-specific mechanisms.
 ARM64 veneer stubs, RISC-V, and FreeBSD API surfaces are defined and return `Error::Unsupported` / `Error::RiscVUnsupported` until platform-specific backends are added.
 
 ## 💉 Injection Engine v2
-
-Phase 23 expands the injection catalogue from 24 to 33 techniques and adds cross-platform coverage.
 
 ### Platform Injection Catalogue
 
@@ -442,8 +436,6 @@ auto sc = engine.shellcode_generate(code_bytes,
 
 ## ⚡ Advanced Hook Techniques
 
-Phase 24 introduces five new hook primitives for specialised use cases.
-
 | Hook | Platform | Use Case |
 |---|---|---|
 | **Relay** | All | Shared trampoline pool — saves one indirection per call on hot hooks |
@@ -463,8 +455,6 @@ auto h = engine.hook_jit(jit_code, detour, &original,
 ```
 
 ## 🔬 Analysis Subsystem v2
-
-Phase 25 adds a full binary analysis toolkit: ELF/Mach-O parsers, control flow graphs, binary diffing, pattern scanning, string extraction, RTTI recovery, and function boundary detection.
 
 | Capability | Types | API |
 |---|---|---|
@@ -496,8 +486,6 @@ auto classes = engine.rtti_scan(GetModuleHandle(nullptr));
 
 ## 🌐 Network Layer v2
 
-Phase 26 adds active network manipulation and deep inspection to the existing passive capture stack.
-
 | Capability | API |
 |---|---|
 | **Packet timing** — jitter to mask hook latency | `net_set_packet_timing()` |
@@ -524,8 +512,6 @@ engine.net_winsock_hook({ .hook_send = true, .hook_recv = true, .hook_dns = true
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
 
 ## 📡 VanTrace v2
-
-Phase 27 adds structured tracing with JSON/binary/collapsed-stack output, filtering, remote streaming, ETW integration, flame graph export, and IDA/Ghidra annotation export.
 
 | Capability | API |
 |---|---|
@@ -559,8 +545,6 @@ engine.trace_ida_export({
 
 ## 🧪 Test Suite
 
-Phase 28 adds a built-in self-test framework covering all hook kinds, hardening modules, stress testing, and per-test execution.
-
 | Capability | API |
 |---|---|
 | **Full test suite** — all hook kinds + hardening self-tests | `test_run()` |
@@ -585,8 +569,6 @@ if (one && one->result == vanhooks::TestResult::Pass)
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
 
 ## 🔥 Fuzzing Infrastructure
-
-Phase 29 adds a programmatic fuzzing API with support for libFuzzer, AFL++, and Honggfuzz, covering 8 subsystem targets with corpus management and sanitizer integration.
 
 | Capability | API |
 |---|---|
@@ -618,8 +600,6 @@ printf("Minimised: %zu → %zu inputs\n", stats->total_inputs, stats->minimised_
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
 
 ## ⚙️ CI/CD Pipeline
-
-Phase 30 adds a programmatic CI/CD API for workflow validation, local job execution, SDK sync checking, release automation, coverage reporting, static analysis, and binary size tracking.
 
 | Capability | API |
 |---|---|
@@ -653,8 +633,6 @@ if (sa)
 
 ## 📖 API Documentation
 
-Phase 31 adds a programmatic documentation API for generating references, querying module/hook/injection docs, and building error guides — all from within the engine.
-
 | Capability | API |
 |---|---|
 | **Generate docs** — Html/Markdown/Json from header comments | `doc_generate()` |
@@ -682,8 +660,6 @@ auto info = engine.doc_module_info("vh::unhook");
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
 
 ## 🔧 SDK Improvements
-
-Phase 32 adds programmatic SDK management: automated sync, version checking, changelog, minimal profile builds, and multi-language binding generation.
 
 | Capability | API |
 |---|---|
