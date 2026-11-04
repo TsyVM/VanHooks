@@ -2058,8 +2058,6 @@ VH_API Result<PolyTrampoline> generate(void* target, void* detour,
 
 ## ⚡ Part XV — Hook Engine v2
 
-Phase 21 adds advanced hook primitives to `vanhooks::Engine` and `vh::Hook`.
-
 ### Conditional hooks
 
 ```cpp
@@ -2210,7 +2208,7 @@ Compile-time signature match: `static_assert` verifies `Sig` is a function point
 
 ---
 
-### Error codes (Phase 21)
+### Error codes
 
 | Code | Value | Description |
 |---|---|---|
@@ -2223,8 +2221,6 @@ Compile-time signature match: `static_assert` verifies `Sig` is a function point
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
 
 ## 🌍 Part XVI — Cross-Platform Hook Parity
-
-Phase 22 extends hook coverage to macOS and Linux-specific mechanisms. All functions return `Error::Unsupported` on platforms where they are not applicable.
 
 ### macOS dyld interpose
 
@@ -2290,7 +2286,7 @@ Platform-specific hardware breakpoint hooks. Currently delegate to the SoftBp fa
 
 ---
 
-### Error codes (Phase 22)
+### Error codes
 
 | Code | Value | Description |
 |---|---|---|
@@ -2302,8 +2298,6 @@ Platform-specific hardware breakpoint hooks. Currently delegate to the SoftBp fa
 | `RiscVUnsupported` | 1105 | RISC-V not yet implemented |
 
 ### Configuration structs (vh::config)
-
-Phase 21/22 add these to `vh::config::`:
 
 | Struct | Phase | Description |
 |---|---|---|
@@ -2317,8 +2311,6 @@ Phase 21/22 add these to `vh::config::`:
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
 
 ## 💉 Part XVII — Injection Engine v2
-
-Phase 23 expands the injection catalogue from 24 to 33 techniques, adds cross-platform injection, a shellcode generator, and an injection recommendation engine.
 
 ---
 
@@ -2501,7 +2493,7 @@ Full PE loader v2: SEH exception tables, TLS callbacks, static CRT initializers,
 
 ### Unified dispatcher update
 
-`InjectMethodEx` now has 33 values (0–32). Phase 23 adds:
+`InjectMethodEx` now has 33 values.
 
 | Value | Name | Platform |
 |---|---|---|
@@ -2519,7 +2511,7 @@ Full PE loader v2: SEH exception tables, TLS callbacks, static CRT initializers,
 
 ---
 
-### Error codes (Phase 23)
+### Error codes
 
 | Code | Value | Description |
 |---|---|---|
@@ -2534,8 +2526,6 @@ Full PE loader v2: SEH exception tables, TLS callbacks, static CRT initializers,
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
 
 ## ⚡ Part XVIII — Advanced Hook Techniques
-
-Phase 24 adds five new hook primitives for specialised use cases: relay hooks, copy-on-write hooks, signal-based hooks, exception-port hooks, and JIT hooks.
 
 ---
 
@@ -2642,7 +2632,7 @@ Hooks dynamically generated code (V8, LuaJIT, .NET JIT). Installs a standard tra
 
 ---
 
-### Error codes (Phase 24)
+### Error codes
 
 | Code | Value | Description |
 |---|---|---|
@@ -2656,7 +2646,7 @@ Hooks dynamically generated code (V8, LuaJIT, .NET JIT). Installs a standard tra
 
 ---
 
-### Configuration structs (vh::config) — Phase 24
+### Configuration structs (vh::config) 
 
 | Struct | Description |
 |---|---|
@@ -2668,8 +2658,6 @@ Hooks dynamically generated code (V8, LuaJIT, .NET JIT). Installs a standard tra
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
 
 ## 🔬 Part XIX — Analysis Subsystem v2
-
-Phase 25 extends the analysis pipeline with cross-platform binary format parsers (ELF, Mach-O), control flow graph construction, binary diffing, advanced pattern scanning, string extraction, RTTI recovery, and function boundary detection.
 
 ---
 
@@ -3038,7 +3026,7 @@ struct FunctionBoundary {
 
 ---
 
-### Error codes — Phase 25
+### Error codes
 
 | Name | Code | Description |
 |---|---|---|
@@ -3057,8 +3045,6 @@ struct FunctionBoundary {
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
 
 ## 🌐 Part XX — Network Layer v2
-
-Phase 26 extends the network subsystem with packet timing normalisation, DNS fingerprint awareness, TLS JA3/JA4 fingerprinting, traffic replay, inline packet interception, certificate pinning detection, and a Winsock hook layer.
 
 > **Compile-time gate:** all network methods require `VH_NET_ENABLED` at build time. Without it, calls return `Error::Unsupported`.
 
@@ -3255,7 +3241,7 @@ engine.net_winsock_unhook();
 
 ---
 
-### Error codes — Phase 26
+### Error codes
 
 | Name | Code | Description |
 |---|---|---|
@@ -3270,8 +3256,6 @@ engine.net_winsock_unhook();
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
 
 ## 📡 Part XXI — VanTrace v2
-
-Phase 27 adds structured tracing with multiple output formats, filtering, remote streaming, ETW integration, flame graph export, and IDA/Ghidra annotation export.
 
 > **Compile-time gate:** all trace methods require `VH_TRACE_ENABLED` at build time. Without it, calls return `Error::TraceInitFailed` or the relevant trace error.
 
@@ -3456,7 +3440,7 @@ engine.trace_ida_export({
 
 ---
 
-### Error codes — Phase 27
+### Error codes
 
 | Name | Code | Description |
 |---|---|---|
@@ -3470,8 +3454,6 @@ engine.trace_ida_export({
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
 
 ## 🧪 Part XXII — Test Suite
-
-Phase 28 adds a built-in self-test framework with full hook-kind coverage, hardening tests, stress tests, and per-test execution.
 
 ---
 
@@ -3626,7 +3608,7 @@ The following tests are included in `test_run()`:
 
 ---
 
-### Error codes — Phase 28
+### Error codes
 
 | Name | Code | Description |
 |---|---|---|
@@ -3637,8 +3619,6 @@ The following tests are included in `test_run()`:
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
 
 ## 🔥 Part XXIII — Fuzzing Infrastructure
-
-Phase 29 adds a programmatic fuzzing API with multi-engine support (libFuzzer, AFL++, Honggfuzz), 8 subsystem-specific fuzz targets, corpus management, crash deduplication, and sanitizer runtime detection.
 
 ---
 
@@ -3766,7 +3746,7 @@ Returns: `["disasm", "trampoline", "pe_parser", "elf_parser", "macho_parser", "i
 
 ---
 
-### Error codes — Phase 29
+### Error codes
 
 | Name | Code | Description |
 |---|---|---|
@@ -3778,8 +3758,6 @@ Returns: `["disasm", "trampoline", "pe_parser", "elf_parser", "macho_parser", "i
 <img width="100%" src="https://capsule-render.vercel.app/api?type=rect&color=0:0D0D0D,50:DC2626,100:0D0D0D&height=3"/>
 
 ## ⚙️ Part XXIV — CI/CD Pipeline
-
-Phase 30 adds a programmatic CI/CD API for workflow validation, local job execution across 10 platform configurations, SDK sync checking, release automation, coverage reporting, static analysis, and binary size tracking.
 
 ---
 
@@ -3951,7 +3929,7 @@ struct CiBinarySizeEntry {
 
 ---
 
-### Error codes — Phase 30
+### Error codes
 
 | Name | Code | Description |
 |---|---|---|
@@ -3965,8 +3943,6 @@ struct CiBinarySizeEntry {
 ---
 
 ## 📖 Part XXV — API Documentation
-
-Phase 31 adds a programmatic documentation API for generating API references, querying module/hook/injection documentation, and building error reference guides — all from within the engine.
 
 ### `doc_generate`
 
@@ -4074,7 +4050,7 @@ Result<std::vector<ErrorRefEntry>> doc_error_reference();
 
 Returns structured error documentation with `code`, `name`, `cause`, `troubleshooting`, and `recovery_example` for each error.
 
-### Error codes — Phase 31
+### Error codes
 
 | Name | Code | Description |
 |---|---|---|
@@ -4085,8 +4061,6 @@ Returns structured error documentation with `code`, `name`, `cause`, `troublesho
 ---
 
 ## 🔧 Part XXVI — SDK Improvements
-
-Phase 32 adds programmatic SDK management: automated header/lib sync, version checking, changelog retrieval, minimal profile builds, and multi-language binding generation (C, Python, Rust, C#).
 
 ### `sdk_sync`
 
@@ -4177,7 +4151,7 @@ auto result = engine.sdk_generate_bindings(cfg);
 // result->generated_files == {"vanhooks.pyi", "vanhooks_bindings.cpp"}
 ```
 
-### Error codes — Phase 32
+### Error codes
 
 | Name | Code | Description |
 |---|---|---|
@@ -4189,8 +4163,6 @@ auto result = engine.sdk_generate_bindings(cfg);
 ---
 
 ## 📚 Part XXVII — Examples & Tutorials
-
-Phase 33 adds a programmatic example registry with 7 comprehensive examples, metadata queries, and build integration.
 
 ### `example_list`
 
@@ -4250,7 +4222,7 @@ Build (and optionally run) an example.
 
 **Returns:** `ExampleBuildResult` with `success`, `output_path`, `build_sec`, `log`.
 
-### Error codes — Phase 33
+### Error codes 
 
 | Name | Code | Description |
 |---|---|---|
@@ -4260,8 +4232,6 @@ Build (and optionally run) an example.
 ---
 
 ## ⚡ Part XXVIII — Performance Pass
-
-Phase 34 adds a micro-benchmark framework with 8 benchmark targets, an arena allocator API for trampoline stubs, and per-module memory footprint tracking.
 
 ### `perf_benchmark`
 
@@ -4346,7 +4316,7 @@ Arena allocator for trampoline stubs — reduces VirtualAlloc calls by pre-alloc
 
 **ArenaStats:** `allocated_bytes`, `used_bytes`, `free_bytes`, `alloc_count`, `arena_count`.
 
-### Error codes — Phase 34
+### Error codes
 
 | Name | Code | Description |
 |---|---|---|
@@ -4356,9 +4326,7 @@ Arena allocator for trampoline stubs — reduces VirtualAlloc calls by pre-alloc
 
 ---
 
-## 🍎 Part XXIX — Phase 39: macOS Deep Support
-
-Phase 39 introduces 5 modules that replace macOS POSIX stubs with real implementations using Mach, dyld, IOKit, and Security framework APIs. Non-macOS platforms compile to safe stubs returning `Error::Unsupported` or empty defaults.
+## 🍎 Part XXIX — macOS Deep Support
 
 ---
 
@@ -4520,9 +4488,7 @@ ARM64e Pointer Authentication Code detection and stripping. Reports which hook s
 
 ---
 
-## 🐧 Part XXX — Phase 40: Linux Deep Support
-
-Phase 40 introduces 6 modules replacing Linux POSIX stubs with real implementations using /proc, bpf(), Landlock, and MAC system queries. Non-Linux platforms compile to safe stubs.
+## 🐧 Part XXX — Linux Deep Support
 
 ---
 
@@ -4713,9 +4679,7 @@ Detects mandatory access control policies (SELinux and AppArmor) and determines 
 
 ---
 
-## 📱 Part XXXI — Phase 41: Mobile Support
-
-Phase 41 introduces 4 modules for Android ARM64 hooking and injection, Android anti-cheat detection, and iOS research. Non-mobile platforms compile to safe stubs returning `Error::Unsupported`.
+## 📱 Part XXXI — Mobile Support
 
 ---
 
